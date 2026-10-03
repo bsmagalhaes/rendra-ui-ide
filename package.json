@@ -69,7 +69,8 @@
   "devDependencies": {
     "electron": "^44.5.0",
     "electron-builder": "^26.15.3",
-    "js-yaml": "^4.3.2"
+    "js-yaml": "^4.3.2",
+    "sharp": "^0.35.5"
   },
   "allowScripts": {
     "electron@44.5.0": true

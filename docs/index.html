@@ -303,25 +303,25 @@ npm start</div>
 
 <script>
   const IMAGES = [
-    ['ide', 'IDE', 'explorador com cores do Git, terminais em grade e editor'],
-    ['claude', 'Claude Code', 'tokens, custo por projeto e modelo, limites do plano'],
-    ['codex', 'Codex CLI', 'consumo em créditos e limites de uso'],
-    ['precos', 'Preços', 'tabelas por token editáveis, atualizadas pelo repositório'],
-    ['terminal', 'Terminal', 'terminais independentes, sem precisar de projeto'],
-    ['novidades', 'Novidades', 'o que mudou em cada versão, dentro do app'],
-    ['sobre', 'Sobre', 'autoria, créditos e licenças'],
+    ['ide', 'IDE', 'explorador com cores do Git, terminais em grade e editor', 'webp'],
+    ['claude', 'Claude Code', 'tokens, custo por projeto e modelo, limites do plano', 'webp'],
+    ['codex', 'Codex CLI', 'consumo em créditos e limites de uso', 'webp'],
+    ['precos', 'Preços', 'tabelas por token editáveis, atualizadas pelo repositório', 'webp'],
+    ['terminal', 'Terminal', 'terminais independentes, sem precisar de projeto', 'webp'],
+    ['novidades', 'Novidades', 'o que mudou em cada versão, dentro do app', 'webp'],
+    ['sobre', 'Sobre', 'autoria, créditos e licenças', 'webp'],
   ];
   const gallery = document.getElementById('gallery');
-  gallery.innerHTML = IMAGES.filter(([id]) => id !== 'ide').map(([id, title, text]) =>
-    `<figure><button type="button" data-open="${id}" aria-label="Ampliar: ${title}"><img src="images/${id}.webp" alt="${title}: ${text}" loading="lazy" width="1920" height="1080"></button><figcaption><b>${title}</b> · ${text}</figcaption></figure>`).join('');
+  gallery.innerHTML = IMAGES.filter(([id]) => id !== 'ide').map(([id, title, text, ext]) =>
+    `<figure><button type="button" data-open="${id}" aria-label="Ampliar: ${title}"><img src="images/${id}.${ext}" alt="${title}: ${text}" loading="lazy" width="1920" height="1080"></button><figcaption><b>${title}</b> · ${text}</figcaption></figure>`).join('');
 
   const lb = document.getElementById('lightbox');
   const lbImg = lb.querySelector('img');
   let current = 0;
   function show(i, push = true) {
     current = (i + IMAGES.length) % IMAGES.length;
-    const [id, title, text] = IMAGES[current];
-    lbImg.src = `images/${id}.webp`;
+    const [id, title, text, ext] = IMAGES[current];
+    lbImg.src = `images/${id}.${ext}`;
     lbImg.alt = `${title}: ${text}`;
     lb.querySelector('.cap').textContent = `${title} · ${text}`;
     lb.classList.add('open');

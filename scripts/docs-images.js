@@ -1,4 +1,4 @@
-// Regenerates docs/images/*.webp (README and GitHub Pages) from the real app running on DEMO data:
+// Regenerates docs/images/* (README and GitHub Pages) from the real app running on DEMO data:
 // a temporary home with made-up Claude Code / Codex sessions, a demo project with git changes and
 // a separate app data folder (RENDRA_DATA_DIR). The maintainer's own sessions, projects, e-mail,
 // paths and settings never appear, and nothing of theirs is read or written.
@@ -8,6 +8,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn, execFileSync } = require('child_process');
+const { imagemMaisLeve } = require('./imagem-mais-leve');
 
 const ROOT = path.join(__dirname, '..');
 const OUT = path.join(ROOT, 'docs', 'images');
@@ -15,6 +16,8 @@ const PORT = 9400 + Math.floor(Math.random() * 400);
 const SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'rendra-demo-'));
 const HOME = path.join(SANDBOX, 'home');
 const DATA = path.join(SANDBOX, 'data');
+const DOCS = path.join(ROOT, 'docs');
+const IMG_RE = '(?:webp|png|jpg)';
 const W = 1920, H = 1080; // Padrão dos produtos Rendra: desktop em 1920x1080
 
 // ── Deterministic demo data ─────────────────────────────────────────────────
@@ -195,6 +198,30 @@ async function connect() {
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// Points docs/index.html and README.md at the extension each image ended up with
+function updateReferences(chosen) {
+  const edit = (file, fn) => {
+    const f = path.join(ROOT, file);
+    const before = fs.readFileSync(f, 'utf8');
+    const after = fn(before);
+    if (after !== before) { fs.writeFileSync(f, after); console.log(`✓ ${file} atualizado`); }
+  };
+  edit(path.join('docs', 'index.html'), t => {
+    for (const [name, ext] of Object.entries(chosen)) {
+      if (name === 'og-image') t = t.replace(new RegExp(`og-image\\.${IMG_RE}`, 'g'), `og-image.${ext}`);
+      else {
+        t = t.replace(new RegExp(`(images/${name}\\.)${IMG_RE}`, 'g'), `$1${ext}`);
+        t = t.replace(new RegExp(`(\\['${name}',[^\\n]*?), '${IMG_RE}'\\]`), `$1, '${ext}']`);
+      }
+    }
+    return t;
+  });
+  edit('README.md', t => {
+    for (const [name, ext] of Object.entries(chosen)) if (name !== 'og-image') t = t.replace(new RegExp(`(docs/images/${name}\\.)${IMG_RE}`, 'g'), `$1${ext}`);
+    return t;
+  });
+}
+
 async function main() {
   claudeSessions(); codexSessions(); claudeAccountAndLimits(); codexAccount();
   const project = demoProject();
@@ -210,12 +237,35 @@ async function main() {
 
   try {
     await send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
+    // Rule 9 of the Rendra umbrella: lightest format without visible loss. Chromium captures lossless PNG,
+    // the generator compares candidates and writes the smallest; if it is not smaller than the file already
+    // in the repository, that one stays. References in docs/index.html and README.md follow the extension.
+    const chosen = {};
+    const kb = n => `${(n / 1024).toFixed(1)} KB`;
+    const keep = (name, ext, buffer, kind) => {
+      const dir = kind === 'social' ? DOCS : OUT;
+      const exts = kind === 'social' ? ['png', 'jpg'] : ['webp', 'png', 'jpg'];
+      const old = exts.map(e => path.join(dir, `${name}.${e}`)).find(f => fs.existsSync(f));
+      const oldBytes = old ? fs.statSync(old).size : Infinity;
+      if (buffer.length >= oldBytes) {
+        chosen[name] = path.extname(old).slice(1);
+        console.log(`= ${name}.${chosen[name]} mantida (${kb(oldBytes)}, nova ${kb(buffer.length)})`);
+        return;
+      }
+      if (old) fs.rmSync(old);
+      fs.writeFileSync(path.join(dir, `${name}.${ext}`), buffer);
+      chosen[name] = ext;
+      console.log(`✓ ${name}.${ext} ${old ? kb(oldBytes) + ' -> ' : ''}${kb(buffer.length)}`);
+    };
+    const save = async (name, png, kind) => {
+      const best = await imagemMaisLeve(png, kind);
+      console.log(`  ${name}: ` + best.tried.map(t => `${t.mode} ${kb(t.bytes)}${Number.isFinite(t.psnr) ? ` (${t.psnr.toFixed(1)} dB)` : ''}`).join(' | '));
+      keep(name, best.ext, best.buffer, kind);
+    };
     const shot = async name => {
       await sleep(400);
-      // WebP (rule 9 of the Rendra umbrella): Chromium encodes it, no extra dependency
-      const { data } = await send('Page.captureScreenshot', { format: 'webp', quality: 92 });
-      fs.writeFileSync(path.join(OUT, `${name}.webp`), Buffer.from(data, 'base64'));
-      console.log(`✓ docs/images/${name}.webp`);
+      const { data } = await send('Page.captureScreenshot', { format: 'png' });
+      await save(name, Buffer.from(data, 'base64'));
     };
     const go = async (page, wait = 1500) => { await ev(`document.querySelector('[data-page=${page}]').click()`); await sleep(wait); };
     for (let i = 0; i < 90 && !/sessões/.test(await ev("document.getElementById('cl-header-sub')?.textContent || ''")); i++) await sleep(1000);
@@ -278,7 +328,7 @@ async function main() {
     await shot('terminal');
 
     // Social image (Open Graph, 1200x630): name, tagline and the IDE screenshot
-    const img = fs.readFileSync(path.join(OUT, 'ide.webp')).toString('base64');
+    const img = fs.readFileSync(path.join(OUT, `ide.${chosen.ide}`)).toString('base64');
     const icon = fs.readFileSync(path.join(ROOT, 'assets', 'icon.svg'), 'utf8');
     const og = `<!doctype html><html><head><meta charset="utf-8"><style>
       html,body{margin:0;width:1200px;height:630px;overflow:hidden;background:#111;font-family:'Segoe UI',system-ui,sans-serif;color:#f2f2f2}
@@ -292,15 +342,15 @@ async function main() {
       <div class="txt"><div class="logo">${icon}</div><h1>Rendra <span>IDE</span></h1>
       <p>Terminais, editor e o consumo de tokens do Claude Code e do Codex, com custo por token.</p></div>
       <div class="by">MIT · github.com/bsmagalhaes/rendra-ui-ide</div>
-      <img class="shot" src="data:image/webp;base64,${img}">
+      <img class="shot" src="data:image/${chosen.ide === 'jpg' ? 'jpeg' : chosen.ide};base64,${img}">
     </body></html>`;
     await send('Emulation.setDeviceMetricsOverride', { width: 1200, height: 630, deviceScaleFactor: 1, mobile: false });
     const { frameTree } = await send('Page.getFrameTree');
     await send('Page.setDocumentContent', { frameId: frameTree.frame.id, html: og });
     await sleep(800);
     const { data: ogData } = await send('Page.captureScreenshot', { format: 'png' });
-    fs.writeFileSync(path.join(ROOT, 'docs', 'og-image.png'), Buffer.from(ogData, 'base64'));
-    console.log('✓ docs/og-image.png');
+    await save('og-image', Buffer.from(ogData, 'base64'), 'social');
+    updateReferences(chosen);
   } finally {
     ws.close();
     try {
