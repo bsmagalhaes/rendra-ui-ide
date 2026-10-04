@@ -214,6 +214,14 @@ async function dois() {
     afirma(JSON.stringify(await botoes(app, alvo)) === JSON.stringify(['Nova conversa no Claude', 'Nova conversa no Codex', 'Só o terminal']), 'três botões de nova sessão');
     afirma(await app.ev(`!!(${alvo}).querySelector('[data-act="todas"]')`), '"Ver todas" no fim da lista');
     await fotografa(app, 'painel-10-conversas');
+    // clique real (mousePressed/mouseReleased) na aba do terminal com o painel aberto: o foco fica dentro do painel e o
+    // xterm não volta a receber teclas (o clique, sem o preventDefault do mousedown, foca no `click`)
+    const caixaAba = await app.ev(`(() => { const r = [...document.querySelectorAll('.ws.active .term-tab .term-pane-name')].at(-1).getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; })()`);
+    await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: caixaAba.x, y: caixaAba.y });
+    await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: caixaAba.x, y: caixaAba.y, button: 'left', buttons: 1, clickCount: 1 });
+    await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: caixaAba.x, y: caixaAba.y, button: 'left', buttons: 0, clickCount: 1 });
+    await sleep(200);
+    afirma(await app.ev(`!!document.activeElement.closest('.term-agentes') && !!(${alvo}).querySelector('.term-agentes')`), 'clique real na aba com o painel aberto: o foco fica dentro do painel de conversas e o painel continua aberto');
     await app.ev(`(${alvo}).querySelector('[data-act="todas"]').click()`);
     await app.espera(`(${alvo}).querySelectorAll('.term-agentes-item').length === 12`, 15000, '12 conversas depois de "Ver todas"');
     afirma(true, '"Ver todas" expõe as 12');

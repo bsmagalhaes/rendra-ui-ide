@@ -1275,9 +1275,10 @@
     const t = { id: null, term, fit, pane, tab, body, alive: false, name: '', recente: '', digitou: false, painel: null, aguardando: null };
     // clicking the tab (outside its buttons) focuses that terminal
     // (com o painel de conversas aberto o foco vai para o painel: o xterm não pode voltar a receber teclas)
-    tab.addEventListener('mousedown', e => {
+    // O foco vai no `click`, nunca no `mousedown` com preventDefault: um mousedown cancelado impede o Chromium de
+    // iniciar o arraste nativo da aba. Depois de um arraste não há click, então o foco não muda por arrastar.
+    tab.addEventListener('click', e => {
       if (e.target.closest('button, input')) return;
-      e.preventDefault();
       if (t.painel) t.painel.el.querySelector('button')?.focus(); else term.focus();
     });
     ws.terms.push(t);
