@@ -1,5 +1,15 @@
 # Novidades
 
+## Próxima versão
+### Fechar a IDE e conversas duplicadas
+- Fechar a IDE agora funciona como no VS Code: tudo que nasceu de um terminal dela é encerrado junto, árvore inteira (o shell, o que rodava nele e, no WSL, a sessão Linux do terminal). Isso vale para "Sair" na bandeja, janela fechada, atualização e queda da janela do app. Antes, só o processo raiz do terminal era fechado e agentes do Claude Code podiam ficar vivos em segundo plano. Quem sai da sessão por conta própria, como uma sessão tmux, continua vivo, como no VS Code.
+- Se a IDE for encerrada à força (instalador, queda), ao abrir de novo ela encerra o que sobrou dos terminais dela, e só isso. O registro fica em `terminais-vivos.json`, na pasta de dados do app.
+- Só pode haver uma IDE por pasta de dados: abrir uma segunda traz a primeira para a frente. Ao rodar `npm start` de um clone com a IDE instalada aberta, a segunda sai na hora; use `RENDRA_DATA_DIR` para uma pasta de dados própria.
+- Cada conversa vive em um terminal só. Retomar uma conversa que já está aberta em outro terminal encerra o agente do terminal anterior (o shell dele continua) e mostra nele "Conversa retomada em outro terminal". Vale o terminal mais recente.
+- Retomar uma conversa que um Claude de fora da IDE está usando (outro terminal, uma sessão tmux) encerra só esse agente, nunca o shell nem o tmux, e carrega a conversa escolhida sem abrir uma nova. Se um rc do shell reabrir o agente em seguida, a IDE avisa e não o persegue.
+- O seletor de conversas marca "em uso" as conversas que têm um agente vivo e explica, numa linha, que a sessão anterior será encerrada ao abrir.
+- Ainda não validado em macOS e Linux, e no WSL só com árvores de teste. O Codex de fora da IDE nunca é encerrado (ele tem trava própria); dentro da IDE, a regra de uma conversa por terminal vale para `codex resume`.
+
 ## 1.7.1 · 04/10/2026
 ### Terminal e editor
 - No Windows, a roda do mouse agora rola o número de linhas que você configurou em "Linhas por vez" nas configurações de mouse do sistema. Antes, o terminal rolava só 3 linhas e o editor cerca de 3 por entalhe, qualquer que fosse a configuração. Vale para o histórico do terminal, para programas em tela cheia (less, vim, Claude Code, Codex) e para o editor. Com Alt a rolagem fica 5 vezes mais rápida. Mac e Linux continuam como antes. Limitação conhecida: roda de alta resolução e trackpad (que mandam passos menores que um entalhe) seguem o comportamento antigo.
