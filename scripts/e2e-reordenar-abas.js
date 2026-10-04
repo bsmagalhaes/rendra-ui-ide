@@ -433,6 +433,89 @@ CENARIOS.projetos = async () => {
   });
 };
 
+const abasEditor = (app, g = 0) => app.ev(`[...(document.querySelectorAll('.ws.active .dev-group')[${g}]?.querySelectorAll('.dev-tab .dev-tab-name') || [])].map(n => n.textContent)`);
+const ativaEditor = (app, g = 0) => app.ev(`document.querySelectorAll('.ws.active .dev-group')[${g}]?.querySelector('.dev-tab.active .dev-tab-name')?.textContent ?? null`);
+const base = p => p.split(/[\\/]/).pop();
+const ctrlTab = async (app, shift = false) => {
+  for (const type of ['keyDown', 'keyUp']) await app.send('Input.dispatchKeyEvent', { type, key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, modifiers: shift ? 10 : 2 });
+  await sleep(150);
+};
+const linhasDoEditor = (app, g = 0) => app.ev(`document.querySelectorAll('.ws.active .dev-group')[${g}]?.querySelector('.view-lines')?.textContent ?? null`);
+
+// T4: abas do editor (arrasto no mesmo grupo, ordem em groups[].tabs, sem renomear, recusa entre grupos)
+CENARIOS.editor = async () => {
+  await comApp({ projetos: ['p1'], grupos: { p1: [{ tabs: ['@a.txt', '@b.txt', '@c.txt'], active: '@a.txt' }] } }, async (app, sb) => {
+    await app.espera(`document.querySelectorAll('.ws.active .dev-tab').length === 3`, 40000, 'três abas do editor restauradas');
+    afirma(igual(await abasEditor(app), ['a.txt', 'b.txt', 'c.txt']) && (await ativaEditor(app)) === 'a.txt', 'partida: a, b, c com a ativa');
+    const r = await arrasta(app, { sel: '.ws.active .dev-tab', n: 2 }, { sel: '.ws.active .dev-tab', n: 0 }, { lado: 'antes' });
+    afirma(r.iniciou && r.dragstarts === 1, `o arraste da aba do editor começa (dragstart ${r.dragstarts})`);
+    afirma(igual(await abasEditor(app), ['c.txt', 'a.txt', 'b.txt']), `c arrastada para antes de a: ${(await abasEditor(app)).join(', ')}`);
+    afirma((await ativaEditor(app)) === 'a.txt', 'a aba ativa continua a.txt (guardada por caminho)');
+    afirma((await restos(app)) === 0, 'nenhuma classe .dragging/.drop-* sobra');
+    const gravado = await esperaConfig(sb, w => igual(w.list[0].groups[0]?.tabs.map(base), ['c.txt', 'a.txt', 'b.txt']));
+    afirma(!!gravado && base(gravado.list[0].groups[0].active) === 'a.txt', `a ordem foi gravada em groups[].tabs (${gravado ? gravado.list[0].groups[0].tabs.map(base).join(', ') : 'não gravou'})`);
+
+    // sem renomear: duplo clique no nome não abre input
+    await duploClique(app, '.ws.active .dev-tab .dev-tab-name', 1);
+    await sleep(300);
+    afirma(!(await app.ev(`!!document.querySelector('.ws.active .dev-tab input')`)), '(9c) o duplo clique na aba do editor não abre input de renomear');
+
+    // (9d) Ctrl+Tab percorre as abas na ordem nova (c, a, b), em círculo
+    await ctrlTab(app);
+    const n1 = await ativaEditor(app);
+    await ctrlTab(app);
+    const n2 = await ativaEditor(app);
+    await ctrlTab(app, true);
+    const n3 = await ativaEditor(app);
+    afirma(n1 === 'b.txt' && n2 === 'c.txt' && n3 === 'b.txt', `(9d) Ctrl+Tab segue a ordem nova (c, a, b): vai a b e a c, depois Ctrl+Shift+Tab volta (${n1}, ${n2}, ${n3})`);
+
+    // renderTabs no meio do arraste (clique programático na aba do meio refaz o innerHTML): ordem final certa
+    await arrasta(app, { sel: '.ws.active .dev-tab', n: 2 }, { sel: '.ws.active .dev-tab', n: 0 }, {
+      lado: 'antes',
+      noMeio: () => app.ev(`document.querySelectorAll('.ws.active .dev-tab')[1].click()`),
+    });
+    afirma(igual(await abasEditor(app), ['b.txt', 'c.txt', 'a.txt']), `(3) com as abas redesenhadas no meio do arraste a ordem final está certa: ${(await abasEditor(app)).join(', ')}`);
+    afirma((await restos(app)) === 0, '(3) nenhuma classe .dragging/.drop-* sobrou');
+
+    // (9b) × e botão do meio fecham a aba certa depois do arraste
+    await cliqueReal(app, '.ws.active .dev-tab', 1, { botao: 'middle' });
+    await app.espera(`document.querySelectorAll('.ws.active .dev-tab').length === 2`, 5000, 'fechou pelo botão do meio');
+    afirma(igual(await abasEditor(app), ['b.txt', 'a.txt']), `(9b) o botão do meio fechou c.txt, a do meio: ${(await abasEditor(app)).join(', ')}`);
+    await cliqueReal(app, '.ws.active .dev-tab .dev-tab-close', 0);
+    await app.espera(`document.querySelectorAll('.ws.active .dev-tab').length === 1`, 5000, 'fechou pelo ×');
+    afirma(igual(await abasEditor(app), ['a.txt']), `(9b) o × fechou b.txt, a primeira: ${(await abasEditor(app)).join(', ')}`);
+  });
+
+  // a ordem volta depois de reabrir o app
+  await comApp({ projetos: ['p1'], grupos: { p1: [{ tabs: ['@a.txt', '@b.txt', '@c.txt'], active: '@b.txt' }] } }, async (app, sb) => {
+    await app.espera(`document.querySelectorAll('.ws.active .dev-tab').length === 3`, 40000, 'três abas restauradas');
+    await arrasta(app, { sel: '.ws.active .dev-tab', n: 0 }, { sel: '.ws.active .dev-tab', n: 2 }, { lado: 'depois' }); // a para depois de c: b, c, a
+    afirma(igual(await abasEditor(app), ['b.txt', 'c.txt', 'a.txt']), `a para depois de c (lado "depois"): ${(await abasEditor(app)).join(', ')}`);
+    await esperaConfig(sb, w => igual(w.list[0].groups[0]?.tabs.map(base), ['b.txt', 'c.txt', 'a.txt']));
+    const app2 = await app.reiniciar();
+    await app2.espera(`document.querySelectorAll('.ws.active .dev-tab').length === 3`, 40000, 'abas restauradas depois de reabrir');
+    afirma(igual(await abasEditor(app2), ['b.txt', 'c.txt', 'a.txt']) && (await ativaEditor(app2)) === 'b.txt', `depois de reabrir: ordem ${(await abasEditor(app2)).join(', ')}, ativa ${await ativaEditor(app2)}`);
+  });
+
+  // dois grupos: a aba de um não é aceita no outro; soltar sobre o Monaco não insere texto
+  await comApp({ projetos: ['p1'], grupos: { p1: [{ tabs: ['@a.txt', '@b.txt'], active: '@a.txt' }, { tabs: ['@c.txt', '@d.txt'], active: '@c.txt' }] } }, async app => {
+    await app.espera(`document.querySelectorAll('.ws.active .dev-group').length === 2 && document.querySelectorAll('.ws.active .dev-tab').length === 4`, 40000, 'dois grupos');
+    afirma(igual(await abasEditor(app, 0), ['a.txt', 'b.txt']) && igual(await abasEditor(app, 1), ['c.txt', 'd.txt']), 'partida: grupo 1 (a, b) e grupo 2 (c, d)');
+    await arrasta(app, { sel: '.ws.active .dev-tab', n: 0 }, { sel: '.ws.active .dev-tab', n: 2 }, { lado: 'antes' }); // a (grupo 1) sobre c (grupo 2)
+    afirma(igual(await abasEditor(app, 0), ['a.txt', 'b.txt']) && igual(await abasEditor(app, 1), ['c.txt', 'd.txt']), 'a aba de um grupo soltada no outro é recusada: nada mudou');
+    afirma((await restos(app)) === 0, 'e nenhuma classe sobrou');
+    const antes = await linhasDoEditor(app, 0);
+    const host = await caixa(app, '.ws.active .dev-group .dev-editor-host', 0);
+    const r = await arrasta(app, { sel: '.ws.active .dev-tab', n: 1 }, null, { soltarEm: { x: Math.round(host.x + host.w / 2), y: Math.round(host.y + host.h / 2) } });
+    await sleep(400);
+    afirma(r.iniciou, 'a aba do editor foi arrastada e solta sobre o Monaco');
+    afirma((await linhasDoEditor(app, 0)) === antes && !(await app.ev(`!!document.querySelector('.ws.active .dev-tab.dirty')`)), 'soltar a aba sobre o Monaco não insere o nome nem o caminho no arquivo (conteúdo igual, nenhuma aba suja)');
+    afirma(igual(await abasEditor(app, 0), ['a.txt', 'b.txt']), 'e a ordem do grupo continua a mesma');
+    await arrasta(app, { sel: '.ws.active .dev-tab', n: 3 }, { sel: '.ws.active .dev-tab', n: 2 }, { lado: 'antes' }); // d antes de c no grupo 2
+    afirma(igual(await abasEditor(app, 1), ['d.txt', 'c.txt']) && igual(await abasEditor(app, 0), ['a.txt', 'b.txt']), `dentro do grupo 2 o arraste funciona: ${(await abasEditor(app, 1)).join(', ')}`);
+  });
+};
+
 // ── Execução ────────────────────────────────────────────────────────────────
 (async () => {
   const nomes = ESCOLHIDOS || Object.keys(CENARIOS);

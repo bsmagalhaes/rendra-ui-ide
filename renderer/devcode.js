@@ -901,7 +901,7 @@
     el.className = 'dev-group';
     el.innerHTML = `
       <div class="dev-tabs-bar">
-        <div class="dev-tabs"></div>
+        <div class="dev-tabs" role="tablist" aria-label="Arquivos abertos"></div>
         <div class="dev-group-actions">
           <button class="dev-icon-btn" data-act="split" title="Dividir à direita (Ctrl+\\)">⫿</button>
           <button class="dev-icon-btn" data-act="close-group" title="Fechar quadro">✕</button>
@@ -937,6 +937,11 @@
     group.tabsEl.addEventListener('auxclick', e => {
       const tab = e.target.closest('.dev-tab');
       if (tab && e.button === 1) closeTab(ws, group, tab.dataset.path);
+    });
+    // reordenar arrastando: só dentro do mesmo grupo (o escopo é workspace + grupo); a aba ativa é guardada por caminho
+    ligarArraste(group.tabsEl, {
+      barra: 'editor', seletor: '.dev-tab', escopo: () => `${ws.id}:${group.id}`, idDe: el => el.dataset.path,
+      mover: (de, alvo, depois) => moverAbaDoEditor(group, de, alvo, depois),
     });
     ws.groups.push(group);
     setActiveGroup(ws, group);
@@ -977,10 +982,22 @@
 
   function renderTabs(group) {
     group.tabsEl.innerHTML = group.tabs.map(p => `
-      <div class="dev-tab${p === group.active ? ' active' : ''}${isDirty(p) ? ' dirty' : ''}" data-path="${esc(p)}" title="${esc(p)}">
+      <div class="dev-tab${p === group.active ? ' active' : ''}${isDirty(p) ? ' dirty' : ''}" data-path="${esc(p)}" role="tab" tabindex="0" draggable="true" aria-selected="${p === group.active}" aria-label="${esc(files.get(p)?.name || baseName(p))}" title="${esc(p)}">
         <span class="dev-tab-name">${esc(files.get(p)?.name || baseName(p))}</span>
-        <span class="dev-tab-close" title="Fechar (Ctrl+W)">${isDirty(p) ? '●' : '×'}</span>
+        <span class="dev-tab-close" role="button" aria-label="Fechar ${esc(files.get(p)?.name || baseName(p))}" title="Fechar (Ctrl+W)">${isDirty(p) ? '●' : '×'}</span>
       </div>`).join('');
+  }
+
+  // Aba do editor movida dentro do grupo: o nome é sempre o do arquivo (sem renomear); group.active é um caminho, então
+  // a aba ativa não precisa de ajuste de índice. Persiste a ordem (groups[].tabs).
+  function moverAbaDoEditor(group, dePath, alvoPath, depois) {
+    const r = window.RendraReordenar.moverPara(group.tabs, group.tabs.indexOf(dePath), group.tabs.indexOf(alvoPath), depois);
+    if (!r.mudou) return;
+    group.tabs.splice(0, group.tabs.length, ...r.lista);
+    renderTabs(group);
+    persist();
+    const p = r.lista[r.indice];
+    anunciar(files.get(p)?.name || baseName(p), r.indice, r.lista.length);
   }
   // Runs on every edit: tab dots now, tree colors once per frame
   let decoFrame = 0;

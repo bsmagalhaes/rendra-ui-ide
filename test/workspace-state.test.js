@@ -79,3 +79,22 @@ test('só o booleano true conta: "true", 1, objeto e nulo viram falso na gravaç
   const r = await montar({ list: estranhos.map((v, i) => ({ name: `w${i}`, root: a, groups: [], editorHidden: v })), active: 0 }).carregar();
   assert.deepStrictEqual(r.list.map(w => w.editorHidden), estranhos.map(() => false));
 });
+
+test('a ordem dos projetos e das abas do editor vai e volta como foi gravada, sem mudar o contrato', async () => {
+  const a = pasta(), b = pasta(), c = pasta();
+  const t = montar();
+  // ordem depois de arrastar: C, A, B; abas do editor do projeto A: z, x, y (com y ativa); `active` é o índice na lista
+  const entrada = { list: [
+    { name: 'C', custom: true, cols: 1, root: c, wsl: null, groups: [], editorHidden: false },
+    { name: 'A', custom: true, cols: 2, root: a, wsl: null, groups: [{ tabs: ['z.txt', 'x.txt', 'y.txt'], active: 'y.txt' }, { tabs: ['k.txt'], active: 'k.txt' }], editorHidden: false },
+    { name: 'B', custom: true, cols: 1, root: b, wsl: null, groups: [], editorHidden: false },
+  ], active: 1 };
+  t.gravar(entrada);
+  assert.deepStrictEqual(t.gravado(), entrada, 'o que ficou gravado é a ordem recebida, com os mesmos campos');
+  const r = await t.carregar();
+  assert.deepStrictEqual(r.list.map(w => w.name), ['C', 'A', 'B']);
+  assert.deepStrictEqual(r.list[1].groups, [{ tabs: ['z.txt', 'x.txt', 'y.txt'], active: 'y.txt' }, { tabs: ['k.txt'], active: 'k.txt' }]);
+  assert.strictEqual(r.active, 1);
+  assert.deepStrictEqual(Object.keys(r.list[0]).sort(), ['cols', 'custom', 'editorHidden', 'groups', 'name', 'root'], 'nenhum campo de ordem ou de id foi acrescentado (o wsl nulo não volta, como antes)');
+  assert.deepStrictEqual(Object.keys(t.gravado().list[0]).sort(), ['cols', 'custom', 'editorHidden', 'groups', 'name', 'root', 'wsl']);
+});
