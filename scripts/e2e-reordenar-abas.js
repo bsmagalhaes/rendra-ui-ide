@@ -124,7 +124,7 @@ async function abrir(sb) {
   await send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 900, deviceScaleFactor: 1, mobile: false });
   await app.espera(`!!document.querySelector('.ws.active')`, 40000, 'workspace ativo');
   // conta os dragstart reais (o Chromium só dispara quando o arraste nativo começa)
-  await ev(`(() => { window.__dragstarts = 0; document.addEventListener('dragstart', () => { window.__dragstarts++; }, true); return true; })()`);
+  await ev(`(() => { window.__dragstarts = 0; window.__evlog = []; document.addEventListener('dragstart', () => { window.__dragstarts++; }, true); ['dragstart', 'dragend', 'dragenter', 'dragover', 'drop', 'dragleave'].forEach(t => document.addEventListener(t, e => window.__evlog.push(t + ':' + (e.target.className || e.target.nodeName)), true)); return true; })()`);
   return app;
 }
 
@@ -200,7 +200,11 @@ async function arrasta(app, origem, destino, { lado = 'antes', noMeio = null, so
   if (!dados) { await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: alvo.x, y: alvo.y, button: 'left', buttons: 0, clickCount: 1 }); await app.send('Input.setInterceptDrags', { enabled: false }); return resultado; }
   await app.send('Input.dispatchDragEvent', { type: 'dragEnter', x: alvo.x, y: alvo.y, data: dados });
   for (let k = 0; k < 2; k++) { await app.send('Input.dispatchDragEvent', { type: 'dragOver', x: alvo.x, y: alvo.y, data: dados }); await sleep(30); }
-  if (noMeio) await noMeio();
+  if (noMeio) {
+    await noMeio();
+    // o mouse de verdade continua mandando dragover: sem ele o Chromium não solta sobre um elemento que acabou de ser recriado
+    for (let k = 0; k < 2; k++) { await app.send('Input.dispatchDragEvent', { type: 'dragOver', x: alvo.x, y: alvo.y, data: dados }); await sleep(30); }
+  }
   resultado.concluir = fim;
   if (soltar) await fim();
   return resultado;
@@ -324,6 +328,108 @@ CENARIOS.foco = async () => {
     afirma(aviso.visivel && /mais 1 vez/.test(aviso.texto), `(c) o segundo toque do Ctrl+C depois de clicar na aba segue a contagem (aviso "${aviso.texto}")`);
     // (d) nenhum diálogo (confirmação de link, salvar) abre só por clicar na aba
     afirma(!(await app.ev(`!!document.querySelector(${JSON.stringify(MODAL)})`)), '(d) clicar na aba não abre confirmação nem diálogo');
+  });
+};
+
+// Espera o debounce do persist e devolve a lista gravada (nomes) e o índice ativo, ou null se não bateu a tempo
+async function esperaConfig(sb, cond, ms = 6000) {
+  const fim = Date.now() + ms;
+  let w = null;
+  while (Date.now() < fim) {
+    try { w = lerConfig(sb).devcode?.workspaces; if (w && cond(w)) return w; } catch { /* gravando */ }
+    await sleep(150);
+  }
+  return null;
+}
+const ativoDosProjetos = app => app.ev(`document.querySelector('#ws-tabs .ws-tab.active .ws-tab-name')?.textContent`);
+// o `.ws` ativo é o do projeto ativo: a posição dele em #ws-host é a da ordem de CRIAÇÃO (a ordem dos nós não muda)
+const wsAtivoIdx = app => app.ev(`[...document.querySelectorAll('#ws-host > .ws')].indexOf(document.querySelector('#ws-host > .ws.active'))`);
+const nomesDe = async app => (await nomesProjetos(app)).join(', ');
+
+// Marca parte do texto de um input com o mouse (pressed, moved, released) e devolve a seleção e os dragstarts
+async function marcaNoInput(app, seletor) {
+  const ci = await caixa(app, seletor);
+  const y = Math.round(ci.y + ci.h / 2);
+  await app.ev('window.__dragstarts = 0');
+  await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(ci.x + 12), y });
+  await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: Math.round(ci.x + 12), y, button: 'left', buttons: 1, clickCount: 1 });
+  for (const dx of [30, 50, 70]) { await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(ci.x + dx), y, button: 'left', buttons: 1 }); await sleep(30); }
+  await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(ci.x + 70), y, button: 'left', buttons: 0, clickCount: 1 });
+  return app.ev(`(() => { const i = document.querySelector(${JSON.stringify(seletor)}); return i ? { a: i.selectionStart, b: i.selectionEnd, n: i.value.length, dragstarts: window.__dragstarts } : null; })()`);
+}
+const duploClique = async (app, seletor, n = 0) => {
+  const pt = centro(await caixa(app, seletor, n));
+  await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pt.x, y: pt.y });
+  for (const k of [1, 2]) {
+    await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pt.x, y: pt.y, button: 'left', buttons: 1, clickCount: k });
+    await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pt.x, y: pt.y, button: 'left', buttons: 0, clickCount: k });
+  }
+};
+
+// T3: projetos (ordem persistida e restaurada, ativo intacto, renomear e fechar depois do arraste)
+CENARIOS.projetos = async () => {
+  await comApp({ projetos: ['p1', 'p2', 'p3'], ativo: 1 }, async (app, sb) => {
+    afirma(igual(await nomesProjetos(app), ['p1', 'p2', 'p3']) && (await ativoDosProjetos(app)) === 'p2', 'partida: p1, p2, p3 com p2 ativo');
+    const idxAntes = await wsAtivoIdx(app);
+    const r = await arrasta(app, { sel: '#ws-tabs .ws-tab', n: 2 }, { sel: '#ws-tabs .ws-tab', n: 0 }, { lado: 'antes' });
+    afirma(r.iniciou && r.dragstarts === 1, `o arraste da aba de projeto começa (dragstart ${r.dragstarts})`);
+    afirma(igual(await nomesProjetos(app), ['p3', 'p1', 'p2']), `p3 arrastado para antes de p1: ${await nomesDe(app)}`);
+    afirma((await ativoDosProjetos(app)) === 'p2' && (await wsAtivoIdx(app)) === idxAntes, 'o projeto ativo continua p2 e o painel ativo é o mesmo');
+    afirma((await restos(app)) === 0, 'nenhuma classe .dragging/.drop-* sobra');
+    const gravado = await esperaConfig(sb, w => igual(w.list.map(x => x.name), ['p3', 'p1', 'p2']));
+    afirma(!!gravado && gravado.active === 2, `a ordem foi gravada em rendra-config.json (${gravado ? gravado.list.map(x => x.name).join(', ') : 'não gravou'}, ativo ${gravado?.active})`);
+
+    // lado "depois": o primeiro vai para depois do último
+    await arrasta(app, { sel: '#ws-tabs .ws-tab', n: 0 }, { sel: '#ws-tabs .ws-tab', n: 2 }, { lado: 'depois' });
+    afirma(igual(await nomesProjetos(app), ['p1', 'p2', 'p3']), `p3 para depois de p2 (lado "depois"): ${await nomesDe(app)}`);
+    await arrasta(app, { sel: '#ws-tabs .ws-tab', n: 2 }, { sel: '#ws-tabs .ws-tab', n: 0 }, { lado: 'antes' }); // volta a p3, p1, p2
+    await esperaConfig(sb, w => igual(w.list.map(x => x.name), ['p3', 'p1', 'p2']));
+
+    // reabre o app: ordem e projeto ativo restaurados
+    const app2 = await app.reiniciar();
+    afirma(igual(await nomesProjetos(app2), ['p3', 'p1', 'p2']), `depois de reabrir: ${await nomesDe(app2)}`);
+    afirma((await ativoDosProjetos(app2)) === 'p2', 'depois de reabrir: p2 continua o projeto ativo');
+
+    // soltar sobre outra aba não ativa ninguém; um clique simples ativa
+    await arrasta(app2, { sel: '#ws-tabs .ws-tab', n: 0 }, { sel: '#ws-tabs .ws-tab', n: 2 }, { lado: 'antes' }); // p3 antes de p2: p1, p3, p2
+    afirma(igual(await nomesProjetos(app2), ['p1', 'p3', 'p2']) && (await ativoDosProjetos(app2)) === 'p2', 'soltar sobre a aba do projeto ativo não mudou o ativo');
+    await arrasta(app2, { sel: '#ws-tabs .ws-tab', n: 2 }, { sel: '#ws-tabs .ws-tab', n: 1 }, { lado: 'antes' }); // p2 antes de p3: p1, p2, p3
+    afirma((await ativoDosProjetos(app2)) === 'p2', 'arrastar a aba ativa também não troca de projeto');
+    await arrasta(app2, { sel: '#ws-tabs .ws-tab', n: 2 }, { sel: '#ws-tabs .ws-tab', n: 0 }, { lado: 'antes' }); // p3 antes de p1: p3, p1, p2
+    afirma((await ativoDosProjetos(app2)) === 'p2', 'soltar sobre uma aba inativa não a ativa');
+    await cliqueReal(app2, '#ws-tabs .ws-tab .ws-tab-name', 1); // p1
+    afirma((await ativoDosProjetos(app2)) === 'p1', '(9a) um clique simples depois do arraste ativa o projeto');
+
+    // renderWsTabs no meio do arraste (um clique programático ativa p2 e refaz as abas): ordem final certa, nada preso
+    await arrasta(app2, { sel: '#ws-tabs .ws-tab', n: 2 }, { sel: '#ws-tabs .ws-tab', n: 0 }, {
+      lado: 'antes',
+      noMeio: () => app2.ev(`document.querySelectorAll('#ws-tabs .ws-tab')[2].click()`), // ativa p2: renderWsTabs apaga a aba de origem
+    });
+    if (process.env.DBG) console.log('  DBG', JSON.stringify(await app2.ev('window.__evlog.slice(-25)')));
+    afirma(igual(await nomesProjetos(app2), ['p2', 'p3', 'p1']), `(3) com as abas redesenhadas no meio do arraste a ordem final está certa: ${await nomesDe(app2)}`);
+    afirma((await restos(app2)) === 0, '(3) nenhuma classe .dragging/.drop-* sobrou');
+    await arrasta(app2, { sel: '#ws-tabs .ws-tab', n: 2 }, { sel: '#ws-tabs .ws-tab', n: 0 }, { lado: 'antes' });
+    afirma(igual(await nomesProjetos(app2), ['p1', 'p2', 'p3']), `(3) o arraste seguinte também funciona (nada ficou preso): ${await nomesDe(app2)}`);
+
+    // renomear com duplo clique depois do arraste e marcar o texto com o mouse dentro do input (a aba não arrasta)
+    await duploClique(app2, '#ws-tabs .ws-tab .ws-tab-name', 0);
+    await app2.espera(`!!document.querySelector('#ws-tabs input.ws-rename')`, 5000, 'input de renomear');
+    afirma(await app2.ev(`document.querySelector('#ws-tabs .ws-tab:has(input.ws-rename)').draggable === false`), '(4) durante o renomear a aba não é arrastável');
+    await app2.send('Input.insertText', { text: 'projeto-comprido' });
+    const sel = await marcaNoInput(app2, '#ws-tabs input.ws-rename');
+    afirma(!!sel && sel.b > sel.a && sel.dragstarts === 0, `(4) o mouse marca parte do texto dentro do input (${sel ? `${sel.a} a ${sel.b} de ${sel.n}` : 'input sumiu'}) sem arrastar a aba`);
+    await tecla(app2, 'Enter', 'Enter', 13);
+    await app2.espera(`!document.querySelector('#ws-tabs input.ws-rename')`, 5000, 'fim do renomear');
+    afirma(igual(await nomesProjetos(app2), ['projeto-comprido', 'p2', 'p3']), `o nome novo vale na aba depois do arraste: ${await nomesDe(app2)}`);
+
+    // (9b) o botão do meio e o × fecham a aba certa (procurada pelo id, não pelo índice de antes do arraste)
+    await arrasta(app2, { sel: '#ws-tabs .ws-tab', n: 2 }, { sel: '#ws-tabs .ws-tab', n: 0 }, { lado: 'antes' }); // p3, projeto-comprido, p2
+    await cliqueReal(app2, '#ws-tabs .ws-tab', 1, { botao: 'middle' });
+    await app2.espera(`document.querySelectorAll('#ws-tabs .ws-tab').length === 2`, 5000, 'fechou pelo botão do meio');
+    afirma(igual(await nomesProjetos(app2), ['p3', 'p2']), `(9b) o botão do meio fechou a aba do meio (projeto-comprido): ${await nomesDe(app2)}`);
+    await cliqueReal(app2, '#ws-tabs .ws-tab .ws-tab-close', 0);
+    await app2.espera(`document.querySelectorAll('#ws-tabs .ws-tab').length === 1`, 5000, 'fechou pelo ×');
+    afirma(igual(await nomesProjetos(app2), ['p2']), `(9b) o × fechou a primeira aba (p3): ${await nomesDe(app2)}`);
   });
 };
 

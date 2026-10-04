@@ -392,16 +392,87 @@
     activateWorkspace(workspaces[Math.min(idx, workspaces.length - 1)]);
   }
 
+  // Abas de projetos: `role=tab` (todas com tabindex 0: alcançáveis por Tab), arrastáveis e com o nome em aria-label.
+  // O arraste e o teclado são delegados em #ws-tabs (o innerHTML é refeito a cada render).
   function renderWsTabs() {
     $('ws-tabs').innerHTML = workspaces.map(ws => `
-      <div class="ws-tab${ws === activeWs ? ' active' : ''}" data-id="${ws.id}" title="${esc(ws.root?.root || 'Sem pasta')}${ws.root?.wsl ? ` · WSL ${esc(ws.root.wsl.distro)}: ${esc(ws.root.wsl.linuxPath)}` : ''}">
+      <div class="ws-tab${ws === activeWs ? ' active' : ''}" data-id="${ws.id}" role="tab" tabindex="0" draggable="true" aria-selected="${ws === activeWs}" aria-label="${esc(ws.name)}" title="${esc(ws.root?.root || 'Sem pasta')}${ws.root?.wsl ? ` · WSL ${esc(ws.root.wsl.distro)}: ${esc(ws.root.wsl.linuxPath)}` : ''}">
         ${ws.root?.wsl ? '<span class="ws-tab-badge">WSL</span>' : ''}
         <span class="ws-tab-name">${esc(ws.name)}</span>
-        <span class="ws-tab-close" title="Fechar workspace">×</span>
+        <span class="ws-tab-close" role="button" aria-label="Fechar workspace ${esc(ws.name)}" title="Fechar workspace">×</span>
       </div>`).join('');
   }
 
+  // ── Reordenar abas por arraste (projetos, terminais e arquivos do editor) ───────────────────────────────────────
+  // O estado do arraste guarda o IDENTIFICADOR da aba (id do projeto, uid do terminal, caminho do arquivo), nunca o
+  // elemento: renderWsTabs e renderTabs refazem o innerHTML e a aba de origem pode sair do DOM no meio do arraste. A
+  // limpeza fica no `document` (dragend e drop) e um dragstart novo sempre recomeça o estado. O dataTransfer leva um
+  // tipo PRÓPRIO (RendraReordenar.TIPO), nunca text/plain: soltar uma aba no Monaco ou no xterm não insere texto.
+  let arrasteAba = null; // { barra, escopo, id }
+  const limpaMarcasDeArraste = () => document.querySelectorAll('.dragging, .drop-before, .drop-after')
+    .forEach(x => x.classList.remove('dragging', 'drop-before', 'drop-after'));
+  const fimDoArraste = () => { arrasteAba = null; limpaMarcasDeArraste(); };
+  document.addEventListener('dragend', fimDoArraste, true);
+  document.addEventListener('drop', fimDoArraste); // na fase de bolha: os handlers das abas já leram o estado
+
+  // Região viva única (index.html, fora das três tablist): o leitor de tela anuncia a nova posição
+  let timerAnuncio = null;
+  function anunciar(nome, indice, total) {
+    const regiao = $('anuncio-abas');
+    if (!regiao) return;
+    clearTimeout(timerAnuncio);
+    regiao.textContent = ''; // só reanuncia quando o texto muda: limpa e reescreve
+    timerAnuncio = setTimeout(() => { regiao.textContent = window.RendraReordenar.anuncio(nome, indice, total); }, 40);
+  }
+
+  // cfg: barra, seletor da aba, escopo() (quem pode soltar: o mesmo contêiner de abas), idDe(el), lista() (ids na
+  // ordem atual), mover(deId, alvoId, depois). Os listeners ficam no contêiner (delegados), que não é recriado.
+  function ligarArraste(cont, cfg) {
+    const R = window.RendraReordenar;
+    const abaDe = e => e.target?.closest?.(cfg.seletor);
+    const aceita = e => !!arrasteAba && arrasteAba.escopo === cfg.escopo() && R.aceitaArraste(e.dataTransfer?.types, arrasteAba, cfg.barra);
+    const depois = (e, aba) => { const r = aba.getBoundingClientRect(); return e.clientX > r.left + r.width / 2; };
+    cont.addEventListener('dragstart', e => {
+      const aba = abaDe(e);
+      if (!aba || !cont.contains(aba)) return;
+      arrasteAba = { barra: cfg.barra, escopo: cfg.escopo(), id: cfg.idDe(aba) };
+      aba.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData(R.TIPO, JSON.stringify({ barra: cfg.barra, id: arrasteAba.id }));
+    });
+    cont.addEventListener('dragover', e => {
+      const aba = abaDe(e);
+      if (!aba || !aceita(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      cont.querySelectorAll('.drop-before, .drop-after').forEach(x => x.classList.remove('drop-before', 'drop-after'));
+      if (cfg.idDe(aba) !== arrasteAba.id) aba.classList.add(depois(e, aba) ? 'drop-after' : 'drop-before');
+    });
+    cont.addEventListener('dragleave', e => abaDe(e)?.classList.remove('drop-before', 'drop-after'));
+    cont.addEventListener('drop', e => {
+      const aba = abaDe(e);
+      if (!aba || !aceita(e)) return;
+      e.preventDefault();
+      const de = arrasteAba.id, alvo = cfg.idDe(aba), apos = depois(e, aba);
+      fimDoArraste();
+      if (de === alvo) return;
+      cfg.mover(de, alvo, apos); // os índices são procurados de novo aqui: a lista pode ter mudado durante o arraste
+    });
+  }
+
+  // Projeto movido: reordena o array (activeWs não muda), redesenha e só então persiste (o `active` gravado é um índice)
+  function moverWorkspace(deId, alvoId, depois) {
+    const ids = workspaces.map(w => String(w.id));
+    const r = window.RendraReordenar.moverPara(workspaces, ids.indexOf(deId), ids.indexOf(alvoId), depois);
+    if (!r.mudou) return;
+    workspaces.splice(0, workspaces.length, ...r.lista);
+    renderWsTabs();
+    persist();
+    anunciar(r.lista[r.indice].name, r.indice, r.lista.length);
+  }
+
   function startRename(ws, tabEl) {
+    tabEl.draggable = false; // com o input dentro de um elemento arrastável o mouse arrasta a aba em vez de marcar o texto
     const nameEl = tabEl.querySelector('.ws-tab-name');
     const input = document.createElement('input');
     input.className = 'ws-rename';
@@ -1567,6 +1638,9 @@
     initialized = true;
 
     $('ws-add').addEventListener('click', () => activateWorkspace(createWorkspace()));
+    ligarArraste($('ws-tabs'), {
+      barra: 'projetos', seletor: '.ws-tab', escopo: () => 'projetos', idDe: el => el.dataset.id, mover: moverWorkspace,
+    });
     $('ws-tabs').addEventListener('click', e => {
       const tab = e.target.closest('.ws-tab');
       const ws = tab && workspaces.find(w => w.id === +tab.dataset.id);

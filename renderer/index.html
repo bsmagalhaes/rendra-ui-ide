@@ -525,7 +525,7 @@
   <!-- PAGE: DevCode — workspaces bar + one layout per workspace, built by devcode.js -->
   <div class="page active" id="page-devcode">
     <div class="ws-bar">
-      <div class="ws-tabs" id="ws-tabs"></div>
+      <div class="ws-tabs" id="ws-tabs" role="tablist" aria-label="Projetos"></div>
       <button class="ws-add" id="ws-add" type="button" title="Novo workspace">＋</button>
     </div>
     <div class="ws-host" id="ws-host"></div>
@@ -627,6 +627,7 @@
 </div>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
+<div id="anuncio-abas" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div><!-- anuncia a nova posição ao reordenar abas (fora das tablist) -->
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <!-- xterm must load before Monaco's AMD loader (devcode.js loads it lazily), or it registers as an AMD module -->
