@@ -16,6 +16,13 @@ const { validarNome } = require('../renderer/novo-item');
 const { ambientePty } = require('./terminal-env');
 const { candidatosDoCaminho } = require('./caminho-terminal');
 const { temImagem } = require('./clip-imagem');
+const crypto = require('crypto');
+const { criarCiclo } = require('./ciclo-terminais');
+const { criarRegistro } = require('./registro-terminais');
+const { comLimite: aoTeto } = require('./sessoes-io'); // roda o trabalho até o teto e devolve o parcial
+const agentesProc = require('./agentes-proc');
+const encerrarProc = require('./encerrar-proc');
+const { idValido } = require('../renderer/sessoes-escolha');
 
 const IS_WIN = process.platform === 'win32';
 const IS_MAC = process.platform === 'darwin';
@@ -103,12 +110,15 @@ function opcoesConpty(isWin, settings) {
 }
 
 // `deps` troca as dependências de sistema nos testes (wsl.exe e node-pty reais não entram neles)
-function registerDevCode({ ipcMain, dialog, store, getWindow, deps = {} }) {
+// `userData`: pasta de dados do app (o registro de terminais vivos mora nela); sem ela não há registro
+function registerDevCode({ ipcMain, dialog, store, getWindow, userData, deps = {} }) {
   const listDistros = deps.listWslDistros || listWslDistros;
   const wakeDistro = deps.wakeWslDistro || wakeWslDistro;
   const loadPty = deps.loadPty || (() => require('@lydell/node-pty'));
   const roots = new Set(); // lower-cased absolute folders the renderer may touch
   const ptys = new Map();
+  const registro = deps.registro || (userData ? criarRegistro({ dir: userData }) : null);
+  const ciclo = criarCiclo({ registro, env: deps.env || process.env, prazos: deps.prazos, deps: deps.ciclo });
   let nextPtyId = 1;
   let pty = null; // native module, loaded when the first terminal opens
 
@@ -467,62 +477,142 @@ function registerDevCode({ ipcMain, dialog, store, getWindow, deps = {} }) {
         : pedidoWsl
           ? { key: 'wsl', label: `WSL ${pedidoWsl}`, file: 'wsl.exe', args: ['-d', pedidoWsl, '--cd', cwd && dir !== home ? (caminhoNoWsl(dir) || '~') : '~'] }
           : (shells.find(s => s.key === shellKey) || shells[0]);
+      // marca do terminal: quem herda RENDRA_TERM nasceu dele, e é por ela que o fechamento acha a sessão Linux (WSL)
+      const marca = crypto.randomBytes(8).toString('hex');
       const proc = pty.spawn(sh.file, sh.args, {
         name: 'xterm-256color',
         cols: Math.max(20, cols | 0 || 80),
         rows: Math.max(5, rows | 0 || 24),
         cwd: wsl ? home : dir, // wsl.exe gets the Linux folder via --cd
         // advertise a full-color terminal so CLIs (git, ls, npm, rtk…) emit colors and emoji
-        env: ambientePty(process.env, { wsl: sh.key === 'wsl' }),
+        env: ambientePty(process.env, { wsl: sh.key === 'wsl', marca }),
         ...opcoesConpty(IS_WIN, store.get('settings', {})),
       });
       const shell = sh.label;
       const id = nextPtyId++;
       ptys.set(id, proc);
+      ciclo.registrar(id, proc, { token: marca, distro: sh.key === 'wsl' ? (wsl ? wsl.distro : pedidoWsl) : null });
       proc.onData(data => send('pty:data', { id, data }));
-      proc.onExit(({ exitCode }) => { ptys.delete(id); send('pty:exit', { id, exitCode }); });
+      proc.onExit(({ exitCode }) => { ptys.delete(id); ciclo.saiu(id); send('pty:exit', { id, exitCode }); });
       return { id, shell, shellKey: sh.key, cwd: dir };
     } catch (e) {
       return { error: e.message };
     }
   });
 
-  // Seletor de conversas do terminal novo. O pedido traz só { shell, cwd, todas }: o ambiente (Windows, distro)
-  // sai das mesmas peças do pty:create (inside, wslFor e a lista de distros), nunca de um objeto do renderer.
-  // Chamado depois do pty:create resolver: a distro já foi acordada e nada aqui a acorda.
+  // Ambiente do terminal a partir de { shell, cwd }: sai das mesmas peças do pty:create (inside, wslFor e a lista de
+  // distros), nunca de um objeto do renderer. Chamado depois do pty:create resolver: a distro já foi acordada e nada
+  // aqui a acorda. Resolve { amb, distroRodando } ou { vazio: true, error? }.
+  async function resolverAmbiente({ shell, cwd } = {}) {
+    if (!cwd || typeof cwd !== 'string') return { vazio: true }; // terminal avulso: sem pasta, sem lista
+    if (!inside(cwd)) return { vazio: true, error: 'Pasta fora das pastas abertas' };
+    const wsl = wslFor(cwd);
+    let shellKey = typeof shell === 'string' ? shell : '';
+    if (!wsl && shellKey.startsWith('wsl:')) {
+      if (!IS_WIN) shellKey = '';
+      else {
+        const pedido = shellKey.slice(4).trim().toLowerCase();
+        const acha = info => info.distros.find(d => d.name.toLowerCase() === pedido);
+        const distro = acha(await wslInfo()) || acha(await wslInfo(true));
+        if (!distro) return { vazio: true, error: `Distribuição WSL "${shellKey.slice(4)}" não encontrada` };
+        shellKey = `wsl:${distro.name}`;
+      }
+    }
+    if (!wsl && !isDir(cwd)) return { vazio: true };
+    const amb = ambienteDoTerminal({ cwd: path.resolve(cwd), wsl, shell: shellKey });
+    if (!amb) return { vazio: true };
+    let distroRodando = true;
+    if (amb.tipo === 'wsl') {
+      // o cache do wslInfo serve; só uma distro ainda não "Running" nele pede a lista nova (acabou de ser acordada)
+      const acha = info => info.distros.find(x => x.name.toLowerCase() === String(amb.distro).toLowerCase());
+      let d = acha(await wslInfo());
+      if (!d || !/^running$/i.test(d.state)) d = acha(await wslInfo(true)) || d;
+      if (!d) return { vazio: true };
+      amb.distro = d.name;
+      distroRodando = /^running$/i.test(d.state);
+    }
+    return { amb, distroRodando };
+  }
+
+  const detectarAgentes = deps.detectarAgentes || agentesProc.detectarAgentes;
+  const escopoDaIde = () => ({ tokens: ciclo.tokens(), ptyPids: ciclo.ptyPids() });
+  const TETO_EM_USO_MS = deps.tetoEmUsoMs || 3500;
+
+  // Quais conversas têm um agente vivo agora, no ambiente do terminal: o Claude de qualquer lugar e o Codex que
+  // nasceu de um terminal da IDE (o de fora tem trava própria). { ok, claude: Set, codex: Set }; ok falso = estouro
+  // de tempo ou falha na leitura, e o seletor segue sem a marca.
+  async function conversasEmUso(amb, distroRodando) {
+    const r = { ok: false, claude: new Set(), codex: new Set() };
+    if (amb.tipo === 'wsl' && !distroRodando) return { ...r, ok: true };
+    await aoTeto(TETO_EM_USO_MS, async () => {
+      const det = await detectarAgentes({ amb, env: deps.env || process.env, ...escopoDaIde() });
+      if (!det) return;
+      for (const a of det.agentes) {
+        if (!a.id) continue;
+        if (a.provedor === 'claude') r.claude.add(a.id);
+        else if (det.donosIde.has(a.pid)) r.codex.add(a.id);
+      }
+      r.ok = true;
+    });
+    return r;
+  }
+
+  // Seletor de conversas do terminal novo. O pedido traz só { shell, cwd, todas }.
+  // Cada conversa volta com `emUso` (um agente vivo a segura); `emUsoIndisponivel: true` quando a leitura falhou ou estourou.
   ipcMain.handle('dev:agent-sessions', async (_e, { shell, cwd, todas } = {}) => {
     const vazio = { provedores: { claude: false, codex: false }, sessoes: [], mais: false };
     try {
-      if (!cwd || typeof cwd !== 'string') return vazio; // terminal avulso: sem pasta, sem lista
-      if (!inside(cwd)) return { ...vazio, error: 'Pasta fora das pastas abertas' };
-      const wsl = wslFor(cwd);
-      let shellKey = typeof shell === 'string' ? shell : '';
-      if (!wsl && shellKey.startsWith('wsl:')) {
-        if (!IS_WIN) shellKey = '';
-        else {
-          const pedido = shellKey.slice(4).trim().toLowerCase();
-          const acha = info => info.distros.find(d => d.name.toLowerCase() === pedido);
-          const distro = acha(await wslInfo()) || acha(await wslInfo(true));
-          if (!distro) return { ...vazio, error: `Distribuição WSL "${shellKey.slice(4)}" não encontrada` };
-          shellKey = `wsl:${distro.name}`;
-        }
-      }
-      if (!wsl && !isDir(cwd)) return vazio;
-      const amb = ambienteDoTerminal({ cwd: path.resolve(cwd), wsl, shell: shellKey });
-      if (!amb) return vazio;
-      let distroRodando = true;
-      if (amb.tipo === 'wsl') {
-        // o cache do wslInfo serve; só uma distro ainda não "Running" nele pede a lista nova (acabou de ser acordada)
-        const acha = info => info.distros.find(x => x.name.toLowerCase() === String(amb.distro).toLowerCase());
-        let d = acha(await wslInfo());
-        if (!d || !/^running$/i.test(d.state)) d = acha(await wslInfo(true)) || d;
-        if (!d) return vazio;
-        amb.distro = d.name;
-        distroRodando = /^running$/i.test(d.state);
-      }
-      return await (deps.sessoesAgentes || require('./sessoes-agentes')).listar({ amb, todas: todas === true, settings: store.get('settings', {}), distroRodando });
+      const r = await resolverAmbiente({ shell, cwd });
+      if (!r.amb) return r.error ? { ...vazio, error: r.error } : vazio;
+      const { amb, distroRodando } = r;
+      const emUsoP = conversasEmUso(amb, distroRodando).catch(() => ({ ok: false, claude: new Set(), codex: new Set() }));
+      const lista = await (deps.sessoesAgentes || require('./sessoes-agentes')).listar({ amb, todas: todas === true, settings: store.get('settings', {}), distroRodando });
+      if (!lista || !Array.isArray(lista.sessoes) || !lista.sessoes.length) return lista;
+      const uso = await emUsoP;
+      const sessoes = lista.sessoes.map(s => ({ ...s, emUso: !!(uso[s.provedor] && uso[s.provedor].has(s.id)) }));
+      return uso.ok ? { ...lista, sessoes } : { ...lista, sessoes, emUsoIndisponivel: true };
     } catch {
       return vazio; // o painel não aparece e o terminal segue normal
+    }
+  });
+
+  // Retomar uma conversa (R3): encerra o agente que a segura (de dentro da IDE ou de fora), só ele, nunca o shell, o tmux
+  // ou outro agente. Recebe só { shell, cwd, provedor, id }: o id passa por idValido, o ambiente sai de resolverAmbiente
+  // e nenhum PID vem do renderer. Com `conferir: true` só consulta: restou dono de FORA da IDE? (depois do --resume)
+  // Resposta: { ok, encerrados, reaberto }. `reaberto` = outro processo segura a conversa (por exemplo o
+  // `claude --continue || claude` de um rc que reabre o agente morto): quem chama avisa e para, sem matar em laço.
+  const ESPERA_REABERTURA_MS = deps.esperaReaberturaMs ?? 1500;
+  ipcMain.handle('dev:agent-encerrar-dono', async (_e, { shell, cwd, provedor, id, conferir } = {}) => {
+    const falha = { ok: false, encerrados: 0, reaberto: false };
+    try {
+      if ((provedor !== 'claude' && provedor !== 'codex') || !idValido(id)) return falha;
+      const r = await resolverAmbiente({ shell, cwd });
+      if (!r.amb) return falha;
+      const { amb, distroRodando } = r;
+      if (amb.tipo === 'wsl' && !distroRodando) return { ok: true, encerrados: 0, reaberto: false };
+      const env = deps.env || process.env;
+      const donosAgora = async () => {
+        const det = await detectarAgentes({ amb, env, ...escopoDaIde() });
+        if (!det || !det.snap) return null;
+        const validos = new Set(det.agentes.map(a => a.pid));
+        return { det, donos: agentesProc.donosDaConversa(det.snap, { provedor, id, ...escopoDaIde() }).filter(d => validos.has(d.pid)) };
+      };
+      if (conferir) {
+        const x = await donosAgora();
+        if (!x) return { ok: true, encerrados: 0, reaberto: false };
+        return { ok: true, encerrados: 0, reaberto: x.donos.some(d => !x.det.donosIde.has(d.pid)) };
+      }
+      const res = await (deps.encerrarDono || encerrarProc.encerrarDonoDaConversa)({ amb, provedor, id, env, ...escopoDaIde() });
+      if (!res) return { ok: false, encerrados: 0, reaberto: false }; // leitura falhou: quem chama segue sem bloquear
+      let reaberto = false;
+      if (res.encerrados.length) {
+        await new Promise(r2 => setTimeout(r2, ESPERA_REABERTURA_MS));
+        const x = await donosAgora();
+        reaberto = !!(x && x.donos.length);
+      }
+      return { ok: true, encerrados: res.encerrados.length, reaberto };
+    } catch {
+      return falha;
     }
   });
 
@@ -531,17 +621,26 @@ function registerDevCode({ ipcMain, dialog, store, getWindow, deps = {} }) {
     const p = ptys.get(id);
     if (p && cols > 0 && rows > 0) { try { p.resize(cols, rows); } catch { /* exited */ } }
   });
-  ipcMain.handle('pty:kill', (_e, id) => {
+  // Fechar um terminal encerra a árvore dele (shell, netos, a sessão Linux no WSL), não só o processo raiz.
+  // Só termina quando morreu (ou no teto de tempo): o renderer espera a resposta.
+  ipcMain.handle('pty:kill', async (_e, id) => {
     const p = ptys.get(id);
-    if (p) { try { p.kill(); } catch { /* already gone */ } ptys.delete(id); }
+    if (p) {
+      ptys.delete(id);
+      try { await ciclo.encerrar([id]); } catch { try { p.kill(); } catch { /* already gone */ } }
+    }
     return true;
   });
 
-  const killAll = () => {
-    for (const p of ptys.values()) { try { p.kill(); } catch { /* ignore */ } }
-    ptys.clear();
+  // Sair da IDE (bandeja, janela fechada, atualização, queda do renderer): encerra a árvore de todos os terminais e
+  // espera. Resolve quando morreram ou no teto global; nunca lança.
+  const killAll = async ({ tetoMs } = {}) => {
     for (const w of watchers.values()) { try { w.watcher.close(); } catch { /* ignore */ } }
     watchers.clear();
+    const ids = [...ptys.keys()];
+    ptys.clear();
+    try { await ciclo.encerrar(undefined, tetoMs ? { tetoMs } : undefined); } catch { /* o que sobrar a varredura da próxima abertura encerra */ }
+    return ids.length;
   };
 
   // ── Unsaved files on quit ─────────────────────────────────────────────────
@@ -589,7 +688,14 @@ function registerDevCode({ ipcMain, dialog, store, getWindow, deps = {} }) {
     });
   }
 
-  return { killAll, guardWindowClose };
+  // Ao abrir (depois de a trava de instância única valer): encerra o que sobrou dos terminais de uma IDE que morreu à força.
+  // Distro WSL parada não é acordada: se não está "Running", nada sobreviveu nela.
+  const varrerAoAbrir = () => require('./registro-terminais').varrer({
+    registro, env: deps.env || process.env,
+    deps: { distroRodando: async distro => { const i = await wslInfo(); const d = i.distros.find(x => x.name.toLowerCase() === String(distro).toLowerCase()); return !!d && /^running$/i.test(d.state); } },
+  }).catch(() => null);
+
+  return { killAll, guardWindowClose, varrerAoAbrir, prepararSaida: () => ciclo.prepararSaida() };
 }
 
 module.exports = { registerDevCode, toWslUnc, opcoesConpty };

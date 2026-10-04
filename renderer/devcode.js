@@ -1150,9 +1150,14 @@
 
   function itensSessoes(sessoes) {
     const SG = window.RendraSessoesEscolha;
-    return sessoes.map((s, i) => `<li><button type="button" role="menuitem" class="term-agentes-item" data-i="${i}" data-provedor="${esc(s.provedor)}" title="${esc(NOME_AGENTE[s.provedor] || s.provedor)}">`
+    // conversa em uso (um agente vivo a segura): marca de texto "em uso" e uma linha que explica o que vai acontecer
+    return sessoes.map((s, i) => `<li><button type="button" role="menuitem" class="term-agentes-item${s.emUso ? ' em-uso' : ''}" data-i="${i}" data-provedor="${esc(s.provedor)}" title="${esc(NOME_AGENTE[s.provedor] || s.provedor)}">`
       + `<span class="term-agentes-ico ${esc(s.provedor)}">${ICONE_AGENTE[s.provedor] || ''}</span>`
-      + `<span class="term-agentes-tit">${esc(s.titulo)}</span><span class="term-agentes-data">${esc(SG.dataBr(s.quando))}</span></button></li>`).join('');
+      + `<span class="term-agentes-tit">${esc(s.titulo)}</span>`
+      + (s.emUso ? `<span class="term-agentes-uso">${esc(SG.TEXTO_EM_USO)}</span>` : '')
+      + `<span class="term-agentes-data">${esc(SG.dataBr(s.quando))}</span>`
+      + (s.emUso ? `<span class="term-agentes-uso-linha">${esc(SG.AVISO_EM_USO)}</span>` : '')
+      + '</button></li>').join('');
   }
 
   // Escrita no pty só depois do primeiro prompt: o texto escrito antes dele pode se perder no ConPTY, e na
@@ -1173,6 +1178,39 @@
     t.aguardando = { dispara, cancela: () => { feito = true; clearTimeout(timer); t.aguardando = null; } };
     timer = setTimeout(dispara, ESPERA_PROMPT_MS);
     if (window.RendraSessoesEscolha.fimDePrompt(t.recente)) dispara();
+  }
+
+  // Uma conversa vive em um terminal só (a mais recente vence). O mapa terminal -> conversa serve apenas para dizer, no
+  // terminal anterior, por que o agente dele parou: quem segura a conversa de fato vem da leitura de processos no main.
+  const MSG_OUTRO_TERMINAL = '[Rendra] Conversa retomada em outro terminal. O agente deste terminal foi encerrado.';
+  const MSG_REABERTA = '[Rendra] Esta conversa foi reaberta por outro processo fora da IDE (por exemplo um rc do shell). Não vou encerrá-lo de novo: feche-o e retome a conversa.';
+  const MSG_DUPLICADA = '[Rendra] Atenção: esta conversa também está aberta por outro processo fora da IDE.';
+  const avisoNoTerminal = (alvo, texto) => { try { alvo.term.write(`\r\n\x1b[33m${texto}\x1b[0m\r\n`); } catch { /* terminal descartado */ } };
+
+  async function liberarConversa(ws, t, shell, conversa) {
+    let r = null;
+    try { r = await dev.agentEncerrarDono({ shell, cwd: ws.root?.root, provedor: conversa.provedor, id: conversa.id }); } catch { r = null; }
+    if (r && r.encerrados > 0) {
+      for (const w of workspaces) {
+        for (const o of w.terms || []) {
+          if (o === t || !o.alive || !o.conversa || o.conversa.provedor !== conversa.provedor || o.conversa.id !== conversa.id) continue;
+          avisoNoTerminal(o, MSG_OUTRO_TERMINAL);
+          o.conversa = null;
+        }
+      }
+    }
+    if (r && r.reaberto) { avisoNoTerminal(t, MSG_REABERTA); return false; } // sem laço de encerramento
+    return true;
+  }
+
+  // Alguns segundos depois do --resume: sobrou dono de FORA da IDE? Só avisa, nunca encerra de novo.
+  function conferirDono(ws, t, shell, conversa) {
+    setTimeout(async () => {
+      if (!t.alive) return;
+      let r = null;
+      try { r = await dev.agentEncerrarDono({ shell, cwd: ws.root?.root, provedor: conversa.provedor, id: conversa.id, conferir: true }); } catch { r = null; }
+      if (r && r.reaberto && t.alive) avisoNoTerminal(t, MSG_DUPLICADA);
+    }, 3000);
   }
 
   function montarSeletor(ws, t, shell, r) {
@@ -1203,11 +1241,23 @@
       if (e.key === 'Escape') { e.preventDefault(); fechar(); }
     });
     // o comando só chega ao shell pelas funções fixas de RendraSessoesEscolha (id uuid validado, ou "claude"/"codex")
-    const iniciar = comando => {
-      if (t.aguardando) return;
+    // `conversa` ({ provedor, id }): retomar. Antes de escrever o comando, o main encerra o agente que segura a conversa
+    // (só ele; de outro terminal da IDE ou de fora), para não haver dois escrevendo nela. Nova conversa não passa por aqui.
+    const iniciar = (comando, conversa) => {
+      if (t.aguardando || t.retomando) return;
       el.classList.add('ocupado');
       el.querySelectorAll('button').forEach(b => { b.disabled = true; });
-      escreverQuandoPronto(t, comando, fechar);
+      if (!conversa) { escreverQuandoPronto(t, comando, fechar); return; }
+      t.retomando = true;
+      liberarConversa(ws, t, shell, conversa).then(livre => {
+        t.retomando = false;
+        if (!livre || !t.alive || !t.painel) { if (t.painel) fechar(); return; }
+        escreverQuandoPronto(t, comando, () => {
+          t.conversa = conversa;
+          fechar();
+          conferirDono(ws, t, shell, conversa);
+        });
+      });
     };
     el.addEventListener('click', async e => {
       const nova = e.target.closest('button[data-nova]');
@@ -1223,7 +1273,7 @@
         const s = sessoes[+item.dataset.i];
         let comando;
         try { comando = SG.comandoRetomar(s && s.provedor, s && s.id); } catch { toast('Conversa inválida'); return; }
-        iniciar(comando);
+        iniciar(comando, { provedor: s.provedor, id: s.id });
         return;
       }
       const todas = e.target.closest('button[data-act="todas"]');

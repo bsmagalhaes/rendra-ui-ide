@@ -65,6 +65,21 @@ const { selectUpdateSource, initialState, canInstall } = require('./src/update-s
   }
 }
 
+// Uma IDE por pasta de dados. A trava vem depois do setPath('userData'): quem usa outra pasta (RENDRA_DATA_DIR, testes,
+// demos) nunca fala com a IDE de uso diário. A segunda instância sai na hora (código 0) e a primeira mostra a janela, que
+// pode estar na bandeja. Na troca de versão não há espera: o instalador só reabre depois de encerrar a antiga e o
+// apply-update.js espera o PID dela sair antes de reabrir. Efeito: `npm start` de um clone sai se a IDE instalada está
+// aberta com a mesma pasta de dados (use RENDRA_DATA_DIR).
+const instanciaUnica = app.requestSingleInstanceLock();
+if (!instanciaUnica) app.exit(0);
+app.on('second-instance', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (process.env.RENDRA_E2E_HIDDEN) return; // os testes não roubam o foco de quem usa a máquina
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+});
+
 // Settings file: rendra-config.json (older versions used tokenmeter-config.json, copied once)
 {
   const dir = app.getPath('userData');
@@ -138,6 +153,12 @@ function createWindow() {
     show: false,
     paintWhenInitiallyHidden: true,
     titleBarStyle: 'hidden',
+  });
+
+  // Renderer que morreu (queda, falta de memória): os terminais ficam sem tela e sem dono. Encerra a árvore de todos.
+  // Só o renderer: a queda de um processo de GPU ou utilitário é recuperável e não leva os terminais junto.
+  mainWindow.webContents.on('render-process-gone', (_e, detalhes) => {
+    if (detalhes && detalhes.reason !== 'clean-exit') devcode.killAll();
   });
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
@@ -277,7 +298,7 @@ ipcMain.handle('limits:bridge-install', () => accountsMod.installStatusline(path
 ipcMain.handle('limits:bridge-uninstall', () => accountsMod.uninstallStatusline());
 
 // ── DevCode tab: explorer, editor files, terminals (see src/devcode.js) ─────
-const devcode = registerDevCode({ ipcMain, dialog, store, getWindow: () => mainWindow });
+const devcode = registerDevCode({ ipcMain, dialog, store, getWindow: () => mainWindow, userData: app.getPath('userData') });
 
 // ── Prices (Preços page) ───────────────────────────────────────────────────
 // The user's table lives in pricing-user.json (app data folder) and overrides the bundled
@@ -402,7 +423,8 @@ function initAutoUpdate() {
   setTimeout(check, 10000);
   setInterval(check, 6 * 60 * 60 * 1000);
   ipcMain.removeHandler('update:install');
-  ipcMain.handle('update:install', () => autoUpdater.quitAndInstall()); // the unsaved-files guard still asks
+  // O NSIS encerra a IDE cerca de 1,3 s depois de abrir: os terminais morrem antes de chamar o instalador
+  ipcMain.handle('update:install', async () => { await devcode.killAll({ tetoMs: 8000 }).catch(() => { /* idem */ }); return autoUpdater.quitAndInstall(); }); // the unsaved-files guard still asks
 }
 ipcMain.handle('update:status', () => updateState);
 ipcMain.handle('update:check', () => updateSource === 'git' || updateSource === 'none' ? gitUpdater.check() : updateState);
@@ -411,7 +433,21 @@ ipcMain.handle('update:last-result', () => gitUpdater.lastResult());
 ipcMain.handle('update:install', () => canInstall(updateSource)
   ? gitUpdater.install(() => { quitAfterClose = true; app.quit(); })
   : { ok: true, noop: true });
-app.on('will-quit', () => gitUpdater.onQuit());
+// Fechar a IDE é como no VS Code: o que nasceu de um terminal dela morre junto, árvore inteira, e a saída espera isso
+// (teto de 3 s). Fica no will-quit, depois da guarda de arquivos não salvos: o Electron não espera promessa no
+// before-quit, e quem cancela a saída ali não pode perder os terminais. O ajudante de atualização roda por último.
+// Depois do preventDefault do will-quit o Electron ignora um novo app.quit() (a saída já está em andamento), então a
+// saída termina em app.exit(), que ainda emite o evento `quit` (o electron-updater instala nele).
+let terminaisEncerrados = false;
+app.on('will-quit', e => {
+  if (terminaisEncerrados) return;
+  e.preventDefault();
+  terminaisEncerrados = true;
+  devcode.killAll().catch(() => { /* a varredura da próxima abertura cobre o que sobrar */ }).finally(() => {
+    try { gitUpdater.onQuit(); } catch { /* o ajudante é opcional */ }
+    app.exit(0);
+  });
+});
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('pricing:apply-feed', async () => {
   try {
@@ -497,7 +533,9 @@ ipcMain.handle('setup:install', async (_e, items = []) => {
   }
   return { results, status: await setup.check() };
 });
-app.on('before-quit', () => devcode.killAll());
+// A foto dos processos dos terminais (lenta no Windows) é tirada já aqui, enquanto a guarda de arquivos não salvos e o
+// fechamento da janela acontecem; o encerramento, no will-quit, a reaproveita.
+app.on('before-quit', () => devcode.prepararSaida());
 
 // ── RTK (Rust Token Killer) ────────────────────────────────────────────────
 // Comandos permitidos na UI e o estado por ambiente e agente: src/rtk-status.js
@@ -568,7 +606,10 @@ ipcMain.handle('show-notification', (_e, { title, body }) => {
   }
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  if (!instanciaUnica) return; // a segunda instância já pediu para sair
+  // sobras de uma IDE que morreu à força (registro de terminais vivos), antes de abrir qualquer terminal novo
+  await Promise.race([devcode.varrerAoAbrir(), new Promise(r => setTimeout(r, 8000))]);
   createWindow();
   createTray();
   startRefreshTimer();

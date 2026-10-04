@@ -76,6 +76,8 @@ contextBridge.exposeInMainWorld('rendra', {
     ptyCreate: (opts) => ipcRenderer.invoke('pty:create', opts),
     ptyShells: () => ipcRenderer.invoke('pty:shells'),
     agentSessions: (opts) => ipcRenderer.invoke('dev:agent-sessions', opts),
+    // retomar uma conversa: encerra só o agente que a segura. { shell, cwd, provedor, id, conferir? } -> { ok, encerrados, reaberto }
+    agentEncerrarDono: (opts) => ipcRenderer.invoke('dev:agent-encerrar-dono', opts),
     clipboardHasImage: () => ipcRenderer.invoke('clip:has-image'),
     ptyWrite: (id, data) => ipcRenderer.send('pty:write', { id, data }),
     ptyResize: (id, cols, rows) => ipcRenderer.send('pty:resize', { id, cols, rows }),

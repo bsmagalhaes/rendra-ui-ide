@@ -10,7 +10,8 @@ const { caminhoNoWsl } = require('../renderer/terminal-escolha');
 
 const win = { skip: process.platform !== 'win32' };
 
-function montar({ workspaces = [], distros = [{ name: 'Ubuntu-24.04', state: 'Running' }] } = {}) {
+// detectar: o detector de agentes vivos (falso aqui: o real lê os processos da máquina)
+function montar({ workspaces = [], distros = [{ name: 'Ubuntu-24.04', state: 'Running' }], detectar = async () => ({ agentes: [], snap: { procs: [], sessoes: [], plataforma: 'win32' }, donosIde: new Set() }), tetoEmUsoMs } = {}) {
   const handlers = new Map();
   const chamadas = [];
   let listagens = 0;
@@ -24,10 +25,13 @@ function montar({ workspaces = [], distros = [{ name: 'Ubuntu-24.04', state: 'Ru
       loadPty: () => ({ spawn() { throw new Error('não deve abrir pty'); } }),
       wakeWslDistro: async () => true,
       sessoesAgentes: { listar: async args => { chamadas.push(args); return resposta; } },
+      detectarAgentes: detectar, tetoEmUsoMs,
     },
   });
   handlers.get('dev:load-workspaces')();
-  return { pedir: req => handlers.get('dev:agent-sessions')({}, req), chamadas, listagens: () => listagens, resposta };
+  // o contrato é aditivo: cada conversa ganha `emUso` (aqui, nenhuma está)
+  const esperada = { ...resposta, sessoes: resposta.sessoes.map(x => ({ ...x, emUso: false })) };
+  return { pedir: req => handlers.get('dev:agent-sessions')({}, req), chamadas, listagens: () => listagens, resposta, esperada };
 }
 
 const temp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'rendra-t-ipc-'));
@@ -57,14 +61,14 @@ test('shell Windows: ambiente windows com o cwd; o `wsl` forjado no pedido é ig
   try {
     const t = montar({ workspaces: [{ root: dir }] });
     const r = await t.pedir({ shell: 'powershell', cwd: dir, wsl: { distro: 'Ubuntu-24.04', linuxPath: '/etc' }, amb: { tipo: 'wsl' } });
-    assert.deepStrictEqual(r, t.resposta);
+    assert.deepStrictEqual(r, t.esperada);
     assert.strictEqual(t.chamadas.length, 1);
     assert.deepStrictEqual(t.chamadas[0].amb, { tipo: 'windows', distro: null, cwd: path.resolve(dir) });
     assert.strictEqual(t.chamadas[0].todas, false);
     assert.strictEqual(t.chamadas[0].distroRodando, true);
     const todas = await t.pedir({ shell: 'powershell', cwd: dir, todas: true });
     assert.strictEqual(t.chamadas[1].todas, true);
-    assert.deepStrictEqual(todas, t.resposta);
+    assert.deepStrictEqual(todas, t.esperada);
     await t.pedir({ shell: 'powershell', cwd: dir, todas: 'sim' });
     assert.strictEqual(t.chamadas[2].todas, false, 'só o booleano true vale');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
@@ -154,4 +158,68 @@ test('o contrato do pty:create e do preload seguem: o canal novo só acrescenta'
   const pre = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
   for (const m of ['ptyCreate', 'ptyShells', 'ptyWrite', 'ptyResize', 'ptyKill', 'onPtyData', 'onPtyExit', 'wslInfo']) assert.match(pre, new RegExp(`${m}:`));
   assert.match(pre, /agentSessions: \(opts\) => ipcRenderer\.invoke\('dev:agent-sessions', opts\)/);
+});
+
+// ── T7: a marca "em uso" no contrato do seletor ─────────────────────────────
+const ID_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const ID_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const ID_C = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+function montarEmUso({ agentes, donosIde = [], detectar, tetoEmUsoMs } = {}) {
+  const handlers = new Map();
+  const ipcMain = { handle: (nome, fn) => handlers.set(nome, fn), on() {}, once() {}, removeHandler() {} };
+  const dir = temp();
+  const store = { get: (k, d) => (k === 'devcode.workspaces' ? { list: [{ root: dir }], active: 0 } : d), set() {}, delete() {} };
+  const resposta = {
+    provedores: { claude: true, codex: true },
+    sessoes: [
+      { provedor: 'claude', id: ID_A, titulo: 'A', quando: 3 }, { provedor: 'claude', id: ID_B, titulo: 'B', quando: 2 },
+      { provedor: 'codex', id: ID_C, titulo: 'C', quando: 1 },
+    ],
+    mais: false,
+  };
+  registerDevCode({
+    ipcMain, dialog: {}, store, getWindow: () => null,
+    deps: {
+      listWslDistros: async () => [], loadPty: () => ({ spawn() { throw new Error('não deve abrir pty'); } }), wakeWslDistro: async () => true,
+      sessoesAgentes: { listar: async () => resposta },
+      detectarAgentes: detectar || (async () => ({ agentes, snap: { procs: [], sessoes: [], plataforma: 'win32' }, donosIde: new Set(donosIde) })),
+      tetoEmUsoMs,
+    },
+  });
+  handlers.get('dev:load-workspaces')();
+  return { pedir: () => handlers.get('dev:agent-sessions')({}, { shell: 'powershell', cwd: dir }), limpa: () => fs.rmSync(dir, { recursive: true, force: true }) };
+}
+
+test('emUso: só a conversa com agente vivo é marcada; as outras não', async () => {
+  const t = montarEmUso({ agentes: [{ pid: 10, provedor: 'claude', id: ID_A }] });
+  try {
+    const r = await t.pedir();
+    assert.deepStrictEqual(r.sessoes.map(s => [s.id, s.emUso]), [[ID_A, true], [ID_B, false], [ID_C, false]]);
+    assert.strictEqual(r.emUsoIndisponivel, undefined);
+  } finally { t.limpa(); }
+});
+
+test('emUso: o Codex só conta quando nasceu de um terminal da IDE (o de fora tem trava própria)', async () => {
+  const fora = montarEmUso({ agentes: [{ pid: 11, provedor: 'codex', id: ID_C }] });
+  const dentro = montarEmUso({ agentes: [{ pid: 12, provedor: 'codex', id: ID_C }], donosIde: [12] });
+  try {
+    assert.strictEqual((await fora.pedir()).sessoes.find(s => s.id === ID_C).emUso, false);
+    assert.strictEqual((await dentro.pedir()).sessoes.find(s => s.id === ID_C).emUso, true);
+  } finally { fora.limpa(); dentro.limpa(); }
+});
+
+test('emUso: detector que falha ou estoura o tempo devolve emUso falso e avisa, sem travar a lista', async () => {
+  const falha = montarEmUso({ detectar: async () => null });
+  const trava = montarEmUso({ detectar: () => new Promise(() => {}), tetoEmUsoMs: 80 });
+  const lanca = montarEmUso({ detectar: async () => { throw new Error('boom'); } });
+  try {
+    for (const t of [falha, trava, lanca]) {
+      const t0 = Date.now();
+      const r = await t.pedir();
+      assert.ok(Date.now() - t0 < 2000);
+      assert.ok(r.sessoes.length === 3 && r.sessoes.every(s => s.emUso === false));
+      assert.strictEqual(r.emUsoIndisponivel, true);
+    }
+  } finally { falha.limpa(); trava.limpa(); lanca.limpa(); }
 });

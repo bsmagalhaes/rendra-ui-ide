@@ -8,6 +8,9 @@
   const SEM_TITULO = 'Conversa sem título';
   const MAX_TITULO = 80;
   const VISIVEIS = 10; // conversas mostradas antes de "Ver todas"
+  // conversa com um agente vivo segurando-a: a marca de texto (não depende só de cor) e a linha que explica o que acontece
+  const TEXTO_EM_USO = 'em uso';
+  const AVISO_EM_USO = 'A sessão anterior será encerrada ao abrir';
   const TE = typeof module !== 'undefined' && module.exports ? require('./terminal-escolha') : root.RendraTermEscolha;
 
   // Só um uuid (minúsculo, com hífens nos lugares certos) pode chegar ao shell
@@ -100,7 +103,7 @@
     return !!ultima && TERMINADOR.test(ultima);
   }
 
-  const api = { idValido, mesmaPasta, caixaInsensivel, tituloCurto, dataBr, ordenarRecentes, visiveis, escolherTitulo, ambienteDoTerminal, opcoesNovaSessao, comandoRetomar, comandoNovo, fimDePrompt, VISIVEIS };
+  const api = { idValido, mesmaPasta, caixaInsensivel, tituloCurto, dataBr, ordenarRecentes, visiveis, escolherTitulo, ambienteDoTerminal, opcoesNovaSessao, comandoRetomar, comandoNovo, fimDePrompt, VISIVEIS, TEXTO_EM_USO, AVISO_EM_USO };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RendraSessoesEscolha = api;
 })(typeof window !== 'undefined' ? window : this);
