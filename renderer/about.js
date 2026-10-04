@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.6.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // "Novidades" page: CHANGELOG.md.
 // "Sobre" page: the product first, then — at the end — the credits and license notices the
 // app must carry:

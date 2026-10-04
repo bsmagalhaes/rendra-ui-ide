@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.6.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Identidade do Codex CLI para a barra de título: lê <.codex>/auth.json e devolve SÓ
 // { email, name, organization, plan }. O arquivo guarda três tokens (access, refresh, id): este
 // módulo decodifica apenas o payload do id_token (base64url, sem verificar assinatura), monta o

@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.6.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // "Preços" page: per-token prices used by every cost in the app.
 //   Claude Code → US$ per 1M tokens (input, output, 5-min / 1-hour cache writes, cache reads,
 //                 fast mode), from platform.claude.com/docs/pt-BR/about-claude/pricing

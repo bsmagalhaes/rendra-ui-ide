@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.6.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // RTK: leitura do estado por ambiente (host e distros WSL) e por agente (Claude Code, Codex).
 // Cada agente grava num banco próprio (RTK_DB_PATH); a leitura é `rtk gain --all --format json`
 // com o banco do agente, executada pelo `rtk` do próprio ambiente (sem sqlite, sem UNC para banco).

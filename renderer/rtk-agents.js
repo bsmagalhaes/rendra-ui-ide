@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.6.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Página RTK: soma pura da economia por agente (Claude Code e Codex) entre os sistemas
 // (Windows, Linux, distros WSL). Carregado no renderer (window.RendraRtkAgents) e nos testes
 // (require). Sem DOM: recebe `environments` de `rtk-status` e devolve números, textos e HTML.

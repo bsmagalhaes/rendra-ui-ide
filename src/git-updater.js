@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.6.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Updates for copies installed with `git clone` + `npm install` (the way Rendra IDE is distributed).
 // The app compares its version with package.json on the remote branch; a new version appears when
 // the maintainer publishes one (version bump + tag), not on every commit. Installing closes the app

@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.6.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Deriva os ambientes WSL (distro + home) a partir do que wslRoots devolve, sem mudar wslRoots:
 //   claude: <raiz>\home\<u>\.claude\projects  ou  <raiz>\root\.claude\projects
 //   codex:  <raiz>\home\<u>\.codex\sessions   ou  <raiz>\root\.codex\sessions

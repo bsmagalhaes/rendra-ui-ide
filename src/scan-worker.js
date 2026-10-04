@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.6.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Runs the session scan off the Electron main thread. The first scan parses every JSONL file
 // (several seconds); doing it on the main thread froze terminals, file I/O and IPC meanwhile.
 // The worker stays alive so the parser's in-memory file cache makes later scans fast.

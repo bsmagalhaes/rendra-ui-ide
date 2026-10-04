@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.6.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // RTK: caminhos dos bancos por agente, versão mínima e citação do comando do hook.
 // Tudo puro (recebe plataforma, ambiente e home): nada aqui toca o disco nem executa o rtk.
 // O banco do Claude é o caminho padrão do RTK; o do Codex fica numa subpasta própria, para o

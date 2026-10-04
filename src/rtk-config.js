@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.6.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // RTK: escritores de configuração dos agentes. Tudo puro (texto entra, texto sai): nada aqui
 // toca o disco. Quem lê, aplica e grava de forma atômica é src/rtk-enable.js.
 // JSON (settings.json do Claude, hooks.json do Codex): reserializa com a indentação detectada.

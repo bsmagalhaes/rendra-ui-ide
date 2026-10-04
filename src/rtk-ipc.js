@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.6.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // RTK: canais IPC. O id do ambiente e o agente vêm do renderer e nunca são confiados: o id é
 // resolvido contra a lista real de ambientes (host ou distro devolvida por `wsl -l -v`) e o
 // agente só vale se for claude ou codex. Qualquer outro valor é recusado antes de qualquer

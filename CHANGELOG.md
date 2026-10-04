@@ -1,6 +1,6 @@
 # Novidades
 
-## Próxima versão
+## 1.7.0 · 03/10/2026
 ### Abas
 - Arrastar as abas de terminais não funcionava e foi corrigido: arraste uma aba sobre outra e os terminais trocam de lugar, na grade também.
 - As abas de projetos e as abas de arquivos do editor agora também se reordenam arrastando. A ordem dos projetos e das abas do editor é salva e volta quando você reabre o app. As abas do editor só trocam de lugar dentro do próprio quadro, e continuam sem renomear.

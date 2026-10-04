@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.6.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Preload só da barra do Rendra Browser (conteúdo local da IDE). A página visitada NÃO carrega este arquivo.
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('rb', {
