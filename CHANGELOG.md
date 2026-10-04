@@ -1,5 +1,9 @@
 # Novidades
 
+## Próxima versão
+### Conversas do terminal
+- "Nova conversa no Claude" agora sempre abre uma conversa nova: a IDE escreve `claude --session-id` com um identificador novo a cada clique. Antes, no WSL, um `claude` sem argumentos podia cair numa sessão tmux já aberta (função no `.bashrc`) em vez de iniciar do zero.
+
 ## 1.7.0 · 03/10/2026
 ### Abas
 - Arrastar as abas de terminais não funcionava e foi corrigido: arraste uma aba sobre outra e os terminais trocam de lugar, na grade também.

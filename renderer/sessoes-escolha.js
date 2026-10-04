@@ -77,7 +77,9 @@
   }
 
   function comandoNovo(provedor) {
-    if (provedor === 'claude') return 'claude\r';
+    // Com argumento, o comando não passa por função claude() do rc do usuário (que, sem argumento, pode
+    // anexar a uma sessão tmux já aberta); o id novo a cada chamada garante conversa nova.
+    if (provedor === 'claude') return `claude --session-id ${globalThis.crypto.randomUUID()}\r`;
     if (provedor === 'codex') return 'codex\r';
     throw new Error('Provedor desconhecido');
   }

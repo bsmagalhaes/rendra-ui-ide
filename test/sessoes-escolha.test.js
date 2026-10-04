@@ -18,9 +18,18 @@ test('comandoRetomar e comandoNovo: textos fixos; id ruim lança', () => {
   assert.throws(() => E.comandoRetomar('claude', `${UUID};calc`));
   assert.throws(() => E.comandoRetomar('claude', '-'.repeat(36)));
   assert.throws(() => E.comandoRetomar('bash', UUID));
-  assert.strictEqual(E.comandoNovo('claude'), 'claude\r');
+  assert.match(E.comandoNovo('claude'), /^claude --session-id [0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\r$/);
   assert.strictEqual(E.comandoNovo('codex'), 'codex\r');
   assert.throws(() => E.comandoNovo('rm'));
+});
+
+test('comandoNovo do Claude: --session-id com uuid v4 novo a cada chamada (não cai na função claude() do .bashrc)', () => {
+  const a = E.comandoNovo('claude'), b = E.comandoNovo('claude');
+  const id = c => c.replace(/^claude --session-id /, '').replace(/\r$/, '');
+  assert.ok(E.idValido(id(a)), 'o id gerado passa em idValido');
+  assert.ok(E.idValido(id(b)));
+  assert.notStrictEqual(id(a), id(b), 'dois cliques, dois ids');
+  assert.strictEqual(E.comandoNovo('codex'), 'codex\r', 'codex continua sem argumento');
 });
 
 test('mesmaPasta: sem caixa no Windows e em /mnt, com caixa no Linux nativo', () => {
