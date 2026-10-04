@@ -844,11 +844,17 @@ body.dev-resizing, body.dev-resizing * { cursor: col-resize !important; user-sel
 .term-tab .dev-icon-btn, .term-tab .term-rename-btn { width: 18px; height: 18px; font-size: 9px; opacity: 0.55; }
 .term-tab:hover .dev-icon-btn, .term-tab:hover .term-rename-btn, .term-tab.focused .dev-icon-btn, .term-tab.focused .term-rename-btn { opacity: 1; }
 .term-tab .dev-icon-btn:disabled { opacity: 0.2; }
-/* drag & drop reorder of terminal tabs */
-.term-tab[draggable="true"] { cursor: grab; }
-.term-tab.dragging { opacity: 0.4; }
-.term-tab.drop-before { box-shadow: inset 2px 0 0 var(--orange); }
-.term-tab.drop-after { box-shadow: inset -2px 0 0 var(--orange); }
+/* Arrastar para reordenar abas: o MESMO indicador nas três barras (projetos, terminais e arquivos do editor).
+   Linha laranja à esquerda ou à direita da aba alvo; a aba arrastada fica a 40%. Em aba que já tem a linha laranja de
+   cima (projeto ativo, terminal em foco, aba ativa do grupo em foco) as duas sombras se somam. */
+.ws-tab[draggable="true"], .term-tab[draggable="true"], .dev-tab[draggable="true"] { cursor: grab; }
+.ws-tab.dragging, .term-tab.dragging, .dev-tab.dragging { opacity: 0.4; }
+.ws-tab.drop-before, .term-tab.drop-before, .dev-tab.drop-before { box-shadow: inset 2px 0 0 var(--orange); }
+.ws-tab.drop-after, .term-tab.drop-after, .dev-tab.drop-after { box-shadow: inset -2px 0 0 var(--orange); }
+.dev-tab.active.drop-before { box-shadow: inset 2px 0 0 var(--orange), inset 0 1px 0 var(--text-dim); }
+.dev-tab.active.drop-after { box-shadow: inset -2px 0 0 var(--orange), inset 0 1px 0 var(--text-dim); }
+.ws-tab.active.drop-before, .term-tab.focused.drop-before, .dev-group.focused .dev-tab.active.drop-before { box-shadow: inset 2px 0 0 var(--orange), inset 0 2px 0 var(--orange); }
+.ws-tab.active.drop-after, .term-tab.focused.drop-after, .dev-group.focused .dev-tab.active.drop-after { box-shadow: inset -2px 0 0 var(--orange), inset 0 2px 0 var(--orange); }
 
 /* ── CODEX PAGE ── */
 .cx-status {

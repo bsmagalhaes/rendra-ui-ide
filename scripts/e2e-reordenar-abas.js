@@ -706,6 +706,49 @@ CENARIOS.teclado = async () => {
   });
 };
 
+// T7: o mesmo indicador de soltar nas três barras (linha laranja à esquerda ou à direita; aba ativa soma a linha de cima)
+CENARIOS.indicador = async () => {
+  await comApp({ projetos: ['p1', 'p2', 'p3'], ativo: 1, grupos: { p2: [{ tabs: ['@a.txt', '@b.txt', '@c.txt'], active: '@a.txt' }] } }, async app => {
+    await app.espera(`document.querySelectorAll('.ws.active .dev-tab').length === 3`, 40000, 'abas do editor');
+    await novoTerminal(app); await novoTerminal(app); await novoTerminal(app);
+    for (const n of [0, 1, 2]) await dispensaPainel(app, n);
+    await cliqueReal(app, '.ws.active .term-tab .term-pane-name', 1); // terminal 2 em foco: tem a linha laranja de cima
+    await app.espera(`document.querySelectorAll('.ws.active .term-tab')[1].classList.contains('focused')`, 5000, 'terminal 2 em foco');
+    await cliqueReal(app, '.ws.active .dev-tab .dev-tab-name', 0); // a.txt ativa (o grupo fica em foco)
+    await sleep(300);
+
+    const LARANJA = 'rgb(232, 101, 10)';
+    const lerAlvo = (seletor, n) => app.ev(`(() => { const e = document.querySelectorAll(${JSON.stringify(seletor)})[${n}]; const cs = getComputedStyle(e); return { classes: e.className, sombra: cs.boxShadow }; })()`);
+    const lerOrigem = (seletor, n) => app.ev(`(() => { const e = document.querySelectorAll(${JSON.stringify(seletor)})[${n}]; return { classes: e.className, opacidade: getComputedStyle(e).opacity, cursor: getComputedStyle(e).cursor }; })()`);
+    const caso = async (nome, seletor, de, para, lado, { ativaCima, preparo = null }) => {
+      const r = await arrasta(app, { sel: seletor, n: de }, { sel: seletor, n: para }, { lado, soltar: false });
+      afirma(r.iniciou, `${nome}: o arraste está no ar (dragover sobre a aba alvo)`);
+      if (preparo) await preparo();
+      const alvo = await lerAlvo(seletor, para);
+      const classe = lado === 'antes' ? 'drop-before' : 'drop-after';
+      afirma(alvo.classes.includes(classe), `${nome}: a aba alvo tem .${classe}`);
+      const lateral = lado === 'antes' ? '2px 0px 0px 0px inset' : '-2px 0px 0px 0px inset';
+      afirma(alvo.sombra.includes(LARANJA) && alvo.sombra.includes(lateral), `${nome}: sombra laranja do lado certo (${alvo.sombra})`);
+      if (ativaCima) afirma(alvo.sombra.includes('0px 2px 0px 0px inset'), `${nome}: a aba que já tem a linha laranja de cima a mantém junto com a de soltar`);
+      const origem = await lerOrigem(seletor, de);
+      afirma(origem.classes.includes('dragging') && origem.opacidade === '0.4' && origem.cursor === 'grab', `${nome}: a aba arrastada fica a 40% (classe .dragging, opacidade ${origem.opacidade}, cursor ${origem.cursor})`);
+      await app.foto(`indicador-${nome}`);
+      await r.concluir();
+      afirma((await restos(app)) === 0, `${nome}: depois de soltar nenhuma aba mantém .dragging/.drop-*`);
+    };
+    // projetos: alvo inativo (p1, "antes") e alvo ativo (p2, "depois"); a ordem volta a cada passo
+    await caso('projetos-antes', '#ws-tabs .ws-tab', 2, 0, 'antes', { ativaCima: false });
+    await caso('projetos-ativo', '#ws-tabs .ws-tab', 0, 2, 'depois', { ativaCima: true }); // o alvo é a aba ativa (p2, agora na posição 2)
+    // terminais: o mousedown da aba de origem tira o foco do xterm, então o foco é devolvido ao terminal alvo no meio do arraste
+    await caso('terminais', '.ws.active .term-tab', 2, 1, 'depois', {
+      ativaCima: true,
+      preparo: async () => { await app.ev("document.querySelectorAll('.ws.active .term-pane')[1].querySelector('.xterm-helper-textarea').focus()"); await sleep(200); },
+    });
+    // editor: alvo é a aba ativa do grupo em foco (a.txt)
+    await caso('editor', '.ws.active .dev-tab', 2, 0, 'antes', { ativaCima: true });
+  });
+};
+
 // ── Execução ────────────────────────────────────────────────────────────────
 (async () => {
   const nomes = ESCOLHIDOS || Object.keys(CENARIOS);
