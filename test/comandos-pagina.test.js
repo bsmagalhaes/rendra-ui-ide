@@ -45,10 +45,11 @@ test('a página existe com cabeçalho no padrão das outras e o corpo que o coma
   assert.strictEqual((bloco.match(/<div\b/g) || []).length, (bloco.match(/<\/div>/g) || []).length);
 });
 
-test('os scripts estão carregados na ordem: atalhos-ide antes do terminal-keys e do devcode; conteúdo antes da página, depois do about', () => {
+test('os scripts estão carregados na ordem: atalhos-ide antes do terminal-keys e do devcode; wheel-lines antes do devcode; conteúdo antes da página, depois do about', () => {
   const pos = n => html.indexOf(`<script src="${n}"></script>`);
-  for (const n of ['atalhos-ide.js', 'terminal-keys.js', 'devcode.js', 'about.js', 'comandos-conteudo.js', 'comandos.js']) assert.ok(pos(n) > 0, `${n} ausente`);
+  for (const n of ['atalhos-ide.js', 'terminal-keys.js', 'wheel-lines.js', 'devcode.js', 'about.js', 'comandos-conteudo.js', 'comandos.js']) assert.ok(pos(n) > 0, `${n} ausente`);
   assert.ok(pos('atalhos-ide.js') < pos('terminal-keys.js') && pos('atalhos-ide.js') < pos('devcode.js'));
+  assert.ok(pos('wheel-lines.js') < pos('devcode.js'), 'wheel-lines.js antes do devcode.js');
   assert.ok(pos('about.js') < pos('comandos-conteudo.js') && pos('comandos-conteudo.js') < pos('comandos.js'));
 });
 

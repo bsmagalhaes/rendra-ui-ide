@@ -1,6 +1,8 @@
 # Novidades
 
 ## Próxima versão
+### Terminal e editor
+- No Windows, a roda do mouse agora rola o número de linhas que você configurou em "Linhas por vez" nas configurações de mouse do sistema. Antes, o terminal rolava só 3 linhas e o editor cerca de 3 por entalhe, qualquer que fosse a configuração. Vale para o histórico do terminal, para programas em tela cheia (less, vim, Claude Code, Codex) e para o editor. Com Alt a rolagem fica 5 vezes mais rápida. Mac e Linux continuam como antes.
 ### Conversas do terminal
 - "Nova conversa no Claude" agora sempre abre uma conversa nova: a IDE escreve `claude --session-id` com um identificador novo, gerado por ela a cada clique (não lido de fora). Antes, no WSL, um `claude` sem argumentos podia cair numa sessão tmux já aberta (função no `.bashrc`) em vez de iniciar do zero.
 

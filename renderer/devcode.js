@@ -929,6 +929,20 @@
       model: null,
     });
     group.editor.onDidFocusEditorText(() => setActiveGroup(ws, group));
+    // Roda do mouse (Windows): 1 entalhe rola as linhas por vez do sistema (RendraWheelLines), por quadro. A opção
+    // mouseWheelScrollSensitivity é estática e o Monaco lê o wheelDeltaY fixo; por isso um tratador próprio, só sobre o
+    // texto e o minimapa (lista de sugestões, hover, busca e dicas de parâmetro têm rolagem própria).
+    const roda = { estado: RendraWheelLines.novoEstado() };
+    el.querySelector('.dev-editor-host').addEventListener('wheel', ev => {
+      const alvo = ev.target.closest?.bind(ev.target);
+      if (!alvo || !alvo('.editor-scrollable, .minimap') || alvo('.suggest-widget, .monaco-hover, .find-widget, .parameter-hints-widget, .monaco-list')) return;
+      const altura = group.editor.getOption(monaco.editor.EditorOption.lineHeight);
+      const r = RendraWheelLines.linhasDaRoda(roda.estado, ev, { plataforma: window.rendra.platform, linhasPagina: Math.max(1, Math.floor(group.editor.getLayoutInfo().height / altura)) });
+      roda.estado = r.estado;
+      if (r.linhas === null) return;
+      ev.preventDefault(); ev.stopPropagation();
+      if (r.linhas) group.editor.setScrollTop(group.editor.getScrollTop() + RendraWheelLines.pixelsDeLinhas(r.linhas, altura), monaco.editor.ScrollType.Immediate);
+    }, { capture: true, passive: false });
     group.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => group.active && saveFile(group.active));
     group.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyW, () => closeTab(ws, group, group.active));
     group.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Backslash, () => splitActive(ws));
@@ -1289,6 +1303,49 @@
     // tudo que não for http(s).
     let pressionado = null;
     body.addEventListener('mousedown', e => { pressionado = { x: e.clientX, y: e.clientY }; }, true);
+    // Roda do mouse (Windows): 1 entalhe rola as "linhas por vez" do sistema, não os 50 px fixos do xterm
+    // (RendraWheelLines decide; este trecho só executa). Buffer normal: rola o histórico por scrollLines, em captura e
+    // antes do Viewport do xterm. Tela alternativa sem mouse (less, vim): N setas no modo de cursor do programa. Com
+    // mouse ligado (Claude Code, Codex): o evento original mais N-1 cópias, para o próprio xterm codificar cada relatório.
+    // Mac e Linux, Ctrl, Shift, trackpad e roda de alta resolução seguem o comportamento do xterm.
+    const roda = { estado: RendraWheelLines.novoEstado(), copias: new WeakSet() };
+    const linhasDaRoda = ev => {
+      const r = RendraWheelLines.linhasDaRoda(roda.estado, ev, { plataforma: window.rendra.platform, linhasPagina: term.rows });
+      roda.estado = r.estado;
+      return r.linhas;
+    };
+    const ramoDaRoda = () => RendraWheelLines.decidirRamo({ tipoBuffer: term.buffer.active.type, modoMouse: term.modes.mouseTrackingMode });
+    body.addEventListener('wheel', ev => {
+      if (roda.copias.has(ev) || !ev.target.closest?.('.xterm') || ramoDaRoda() !== 'scroll') return;
+      const linhas = linhasDaRoda(ev);
+      if (linhas === null) return;
+      ev.preventDefault(); ev.stopPropagation(); // sem stopPropagation o Viewport rolaria os 50 px dele por cima
+      if (linhas) term.scrollLines(linhas);
+    }, { capture: true, passive: false });
+    term.attachCustomWheelEventHandler(ev => {
+      if (roda.copias.has(ev)) return true; // cópia nossa: o xterm só a codifica
+      const ramo = ramoDaRoda();
+      if (ramo === 'scroll') return true;
+      const linhas = linhasDaRoda(ev);
+      if (linhas === null) return true;
+      if (ramo === 'setas') {
+        ev.preventDefault();
+        if (linhas) term.input(RendraWheelLines.sequenciaDeSetas(linhas, term.modes.applicationCursorKeysMode), true);
+        return false; // o xterm não manda a seta dele
+      }
+      if (!linhas) return false;
+      // deltaY pequeno (1 linha por vez = 33 px) o xterm trata como trackpad (x0,3) e perde relatórios: então as N cópias
+      // levam um deltaY grande e o original não segue; com deltaY normal o original gera o primeiro relatório
+      const pequeno = ev.deltaMode === 0 && Math.abs(ev.deltaY) < 50;
+      const deltaY = pequeno ? Math.sign(ev.deltaY) * 100 : ev.deltaY;
+      for (let i = pequeno ? Math.abs(linhas) : RendraWheelLines.copiasExtras(linhas); i > 0; i--) {
+        const c = new WheelEvent('wheel', { bubbles: true, cancelable: true, composed: true, view: window, clientX: ev.clientX, clientY: ev.clientY, screenX: ev.screenX, screenY: ev.screenY, deltaX: ev.deltaX, deltaY, deltaMode: ev.deltaMode, altKey: ev.altKey });
+        roda.copias.add(c);
+        ev.target.dispatchEvent(c);
+      }
+      if (pequeno) ev.preventDefault();
+      return !pequeno;
+    });
     const abrirLink = (ev, url) => {
       if (ev && (ev.ctrlKey || ev.metaKey)) { window.rendra.openExternal(url); return; }
       if (pressionado && ev && Math.hypot(ev.clientX - pressionado.x, ev.clientY - pressionado.y) > 4) return;
