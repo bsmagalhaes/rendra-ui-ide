@@ -17,6 +17,7 @@
   const workspaces = [];
   let activeWs = null;
   let nextWsId = 1;
+  let nextTermUid = 1;
   let initialized = false;
   let monaco = null;
   let monacoLoading = null;
@@ -249,6 +250,7 @@
       termTabs: el.querySelector('.dev-term-tabs'),
       editors: el.querySelector('.dev-editors'),
     };
+    ligarArrasteTerminais(ws);
 
     el.querySelector('[data-act=open]').addEventListener('click', () => pickFolder(ws));
     el.querySelector('[data-act=refresh]').addEventListener('click', () => renderTree(ws));
@@ -300,7 +302,7 @@
       <section class="dev-terms">
         <div class="dev-panel-head">
           <span class="dev-panel-title">Terminais</span>
-          <div class="dev-term-tabs"></div>
+          <div class="dev-term-tabs" role="tablist" aria-label="Terminais"></div>
           <div class="dev-panel-actions">
             <div class="dev-cols" title="Colunas de terminais">
               ${[1, 2, 3, 4].map(n => `<button class="dev-col-btn" data-cols="${n}">${n}</button>`).join('')}
@@ -347,6 +349,7 @@
         groups: [], terms: [], termCount: 0, el: host,
         refs: { grid: host.querySelector('.dev-term-grid'), termTabs: host.querySelector('.dev-term-tabs') },
       };
+      ligarArrasteTerminais(terminalPage);
       wireTerminalSection(terminalPage, host, () => lsSet('term.cols', String(terminalPage.cols)));
       layoutTerminals(terminalPage);
       return;
@@ -1236,12 +1239,16 @@
     ws.refs.grid.appendChild(pane);
     const tab = document.createElement('div');
     tab.className = 'term-tab';
-    tab.draggable = true; // drag a tab onto another to reorder the terminals
+    tab.draggable = true; // arraste uma aba sobre outra para reordenar os terminais (ligarArrasteTerminais)
     tab.title = 'Arraste para reordenar';
+    tab.setAttribute('role', 'tab');
+    tab.tabIndex = 0;
+    tab.setAttribute('aria-selected', 'false');
+    tab.setAttribute('aria-label', 'Terminal');
     tab.innerHTML = `
       <span class="term-pane-name">…</span>
-      <button class="term-rename-btn" data-act="rename" title="Renomear terminal">✎</button>
-      <button class="dev-icon-btn" data-act="close" title="Fechar terminal">✕</button>`;
+      <button class="term-rename-btn" data-act="rename" title="Renomear terminal" aria-label="Renomear terminal">✎</button>
+      <button class="dev-icon-btn" data-act="close" title="Fechar terminal" aria-label="Fechar terminal">✕</button>`;
     ws.refs.termTabs.appendChild(tab);
     const body = pane.querySelector('.term-pane-body');
     const term = new Terminal({
@@ -1360,14 +1367,15 @@
       },
     });
     term.open(body);
-    const t = { id: null, term, fit, pane, tab, body, alive: false, name: '', recente: '', digitou: false, painel: null, aguardando: null };
+    const t = { uid: nextTermUid++, id: null, term, fit, pane, tab, body, alive: false, name: '', recente: '', digitou: false, painel: null, aguardando: null };
     // clicking the tab (outside its buttons) focuses that terminal
     // (com o painel de conversas aberto o foco vai para o painel: o xterm não pode voltar a receber teclas)
     // O foco vai no `click`, nunca no `mousedown` com preventDefault: um mousedown cancelado impede o Chromium de
     // iniciar o arraste nativo da aba. Depois de um arraste não há click, então o foco não muda por arrastar.
+    tab.dataset.uid = t.uid;
     tab.addEventListener('click', e => {
       if (e.target.closest('button, input')) return;
-      if (t.painel) t.painel.el.querySelector('button')?.focus(); else term.focus();
+      focarTerminal(t);
     });
     ws.terms.push(t);
     layoutTerminals(ws);
@@ -1385,6 +1393,7 @@
     t.shellKey = res.shellKey;
     t.name = `${res.shell} ${++ws.termCount}`;
     tab.querySelector('.term-pane-name').textContent = t.name;
+    tab.setAttribute('aria-label', t.name);
     ptyOwner.set(t.id, { ws, t });
     tab.querySelector('[data-act=rename]').addEventListener('click', () => renameTerminal(t));
     tab.querySelector('.term-pane-name').addEventListener('dblclick', () => renameTerminal(t));
@@ -1496,9 +1505,8 @@
       ev.preventDefault();
       pasteText().catch(() => { });
     });
-    term.textarea?.addEventListener('focus', () => { pane.classList.add('focused'); tab.classList.add('focused'); });
-    term.textarea?.addEventListener('blur', () => { pane.classList.remove('focused'); tab.classList.remove('focused'); });
-    initTabDrag(ws, t);
+    term.textarea?.addEventListener('focus', () => { pane.classList.add('focused'); tab.classList.add('focused'); tab.setAttribute('aria-selected', 'true'); });
+    term.textarea?.addEventListener('blur', () => { pane.classList.remove('focused'); tab.classList.remove('focused'); tab.setAttribute('aria-selected', 'false'); });
     tab.querySelector('[data-act=close]').addEventListener('click', async () => {
       // a terminal whose process already ended closes without asking
       if (t.alive && !(await askCloseTerminals(
@@ -1519,6 +1527,7 @@
     const input = document.createElement('input');
     input.className = 'term-rename';
     input.value = t.name;
+    t.tab.draggable = false; // com o input dentro de um elemento arrastável o mouse arrasta a aba em vez de marcar o texto
     nameEl.replaceWith(input);
     input.focus();
     input.select();
@@ -1527,7 +1536,8 @@
       if (finished) return;
       finished = true;
       const v = input.value.trim();
-      if (commit && v) t.name = v;
+      if (commit && v) { t.name = v; t.tab.setAttribute('aria-label', v); }
+      t.tab.draggable = true;
       const span = document.createElement('span');
       span.className = 'term-pane-name';
       span.textContent = t.name;
@@ -1543,45 +1553,30 @@
     input.addEventListener('blur', () => finish(true));
   }
 
-  // Moves terminal t to position `to` (tabs and grid panes follow the same order)
-  function moveTerminalTo(ws, t, to) {
-    const from = ws.terms.indexOf(t);
-    if (from < 0 || to === from) return;
-    ws.terms.splice(from, 1);
-    ws.terms.splice(Math.max(0, Math.min(to, ws.terms.length)), 0, t);
-    ws.terms.forEach(x => { ws.refs.grid.appendChild(x.pane); ws.refs.termTabs.appendChild(x.tab); }); // DOM order = grid order
+  // Foco de um terminal: com o painel de conversas aberto o foco vai para o painel (o xterm não pode voltar a receber teclas)
+  const focarTerminal = t => { if (t.painel) t.painel.el.querySelector('button')?.focus(); else t.term.focus(); };
+
+  // Aplica uma ordem nova dos terminais de `ws`: abas e panes da grade andam juntos (a ordem no DOM é a da grade)
+  function aplicarOrdemTerminais(ws, lista) {
+    ws.terms = lista;
+    ws.terms.forEach(x => { ws.refs.grid.appendChild(x.pane); ws.refs.termTabs.appendChild(x.tab); });
     layoutTerminals(ws);
-    t.term.focus();
   }
 
-  // Drag & drop reorder: dropping on the left half of a tab puts it before, right half after
-  let dragged = null;
-  function initTabDrag(ws, t) {
-    const { tab } = t;
-    const clear = () => ws.refs.termTabs.querySelectorAll('.term-tab').forEach(x => x.classList.remove('drop-before', 'drop-after'));
-    const after = e => { const r = tab.getBoundingClientRect(); return e.clientX > r.left + r.width / 2; };
-    tab.addEventListener('dragstart', e => {
-      dragged = { ws, t };
-      tab.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', t.name);
-    });
-    tab.addEventListener('dragend', () => { dragged = null; tab.classList.remove('dragging'); clear(); });
-    tab.addEventListener('dragover', e => {
-      if (!dragged || dragged.ws !== ws || dragged.t === t) return;
-      e.preventDefault();
-      clear();
-      tab.classList.add(after(e) ? 'drop-after' : 'drop-before');
-    });
-    tab.addEventListener('dragleave', () => tab.classList.remove('drop-before', 'drop-after'));
-    tab.addEventListener('drop', e => {
-      if (!dragged || dragged.ws !== ws || dragged.t === t) return;
-      e.preventDefault();
-      const moving = dragged.t;
-      const target = ws.terms.indexOf(t) + (after(e) ? 1 : 0);
-      const from = ws.terms.indexOf(moving);
-      clear();
-      moveTerminalTo(ws, moving, from < target ? target - 1 : target);
+  // Reordenar abas de terminais por arraste (a ordem vale só na sessão: terminais não são persistidos). O arraste é do
+  // mesmo `ws` (outro projeto ou a página Terminal recusam: o escopo é o id do ws) e usa o estado por id de ligarArraste.
+  function ligarArrasteTerminais(ws) {
+    ligarArraste(ws.refs.termTabs, {
+      barra: 'terminais', seletor: '.term-tab', escopo: () => ws.id, idDe: el => el.dataset.uid,
+      mover: (de, alvo, depois) => {
+        const ids = ws.terms.map(x => String(x.uid));
+        const r = window.RendraReordenar.moverPara(ws.terms, ids.indexOf(de), ids.indexOf(alvo), depois);
+        if (!r.mudou) return;
+        const movido = r.lista[r.indice];
+        aplicarOrdemTerminais(ws, r.lista);
+        focarTerminal(movido);
+        anunciar(movido.name || 'Terminal', r.indice, r.lista.length);
+      },
     });
   }
 

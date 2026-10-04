@@ -78,7 +78,9 @@ test('painel de conversas aberto: nenhuma escrita direta nova (colar, Alt+V, Ctr
   assert.match(handler, /if \(!t\.painel\) t\.ctrlC\.tocar\(\);/);
   // o foco vai no `click`: um mousedown com preventDefault impede o arraste nativo da aba (os terminais não reordenavam)
   const aba = trecho(devcode, "tab.addEventListener('click'", '    });');
-  assert.match(aba, /if \(t\.painel\) t\.painel\.el\.querySelector\('button'\)\?\.focus\(\); else term\.focus\(\);/);
+  assert.match(aba, /focarTerminal\(t\);/);
+  // com o painel aberto o foco vai para o painel, nunca para o xterm
+  assert.match(devcode, /const focarTerminal = t => \{ if \(t\.painel\) t\.painel\.el\.querySelector\('button'\)\?\.focus\(\); else t\.term\.focus\(\); \};/);
   assert.ok(!devcode.includes("tab.addEventListener('mousedown'"), 'a aba do terminal não escuta o mousedown (o preventDefault bloqueia o arraste)');
 });
 

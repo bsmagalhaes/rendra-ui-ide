@@ -267,6 +267,50 @@ CENARIOS.terminais = async () => {
     afirma(igual(await ordemMarcas(app), { abas: [2, 0, 1], panes: [2, 0, 1] }), 'a grade acompanha as abas (panes na mesma ordem)');
     afirma(igual([...depois].sort(), [...antes].sort()), 'os nomes não mudaram');
     afirma((await restos(app)) === 0, 'nenhuma classe .dragging/.drop-* sobra depois de soltar');
+
+    // lado "depois": a primeira aba (agora a do terminal 3) vai para depois da última
+    await arrasta(app, { sel: '.ws.active .term-tab', n: 0 }, { sel: '.ws.active .term-tab', n: 2 }, { lado: 'depois' });
+    afirma(igual(await nomesTerminais(app), [antes[0], antes[1], antes[2]]), `lado "depois": ${(await nomesTerminais(app)).join(' | ')}`);
+    afirma(igual(await ordemMarcas(app), { abas: [0, 1, 2], panes: [0, 1, 2] }), 'e a grade acompanha de novo');
+
+    // o clique simples (sem arrasto) segue focando o terminal e não reordena
+    await app.ev('window.__dragstarts = 0');
+    await cliqueReal(app, '.ws.active .term-tab .term-pane-name', 1);
+    afirma(igual(await ordemMarcas(app), { abas: [0, 1, 2], panes: [0, 1, 2] }) && (await app.ev('window.__dragstarts')) === 0, 'um clique simples não reordena nem inicia arraste');
+
+    // soltar a aba do terminal sobre o xterm não digita nada no shell (tipo próprio do arraste, nunca text/plain)
+    const xterm = await caixa(app, '.ws.active .term-pane .xterm-screen', 1);
+    const textoXterm = () => app.ev(`[...document.querySelectorAll('.ws.active .term-pane')].map(p => p.querySelector('.xterm-rows').textContent).join('|')`);
+    const rowsAntes = await textoXterm();
+    const rx = await arrasta(app, { sel: '.ws.active .term-tab', n: 0 }, null, { soltarEm: { x: Math.round(xterm.x + xterm.w / 2), y: Math.round(xterm.y + xterm.h / 2) } });
+    await sleep(700);
+    afirma(rx.iniciou && (await textoXterm()) === rowsAntes, 'soltar a aba do terminal sobre o xterm não escreve nada no terminal (texto dos terminais igual)');
+    afirma(igual(await ordemMarcas(app), { abas: [0, 1, 2], panes: [0, 1, 2] }), 'e a ordem não mudou');
+
+    // as barras não aceitam arraste umas das outras (projeto sobre terminal e terminal sobre projeto)
+    await arrasta(app, { sel: '#ws-tabs .ws-tab', n: 1 }, { sel: '.ws.active .term-tab', n: 0 }, { lado: 'antes' });
+    afirma(igual(await nomesProjetos(app), ['p1', 'p2']) && igual(await ordemMarcas(app), { abas: [0, 1, 2], panes: [0, 1, 2] }), 'a aba de projeto solta na barra de terminais é recusada (nada mudou)');
+    await arrasta(app, { sel: '.ws.active .term-tab', n: 2 }, { sel: '#ws-tabs .ws-tab', n: 0 }, { lado: 'antes' });
+    afirma(igual(await nomesProjetos(app), ['p1', 'p2']) && igual(await ordemMarcas(app), { abas: [0, 1, 2], panes: [0, 1, 2] }), 'a aba de terminal solta na barra de projetos é recusada (nada mudou)');
+    afirma((await restos(app)) === 0, 'nenhuma classe sobra depois das recusas');
+
+    // painel de conversas (onde o claude/codex existem): o painel e o foco ficam certos depois do movimento
+    const comPainel = await app.ev(`!!document.querySelectorAll('.ws.active .term-pane')[2].querySelector('.term-agentes')`);
+    if (comPainel) {
+      await arrasta(app, { sel: '.ws.active .term-tab', n: 2 }, { sel: '.ws.active .term-tab', n: 0 }, { lado: 'antes' });
+      afirma(await app.ev(`!!document.querySelectorAll('.ws.active .term-pane')[0].querySelector('.term-agentes') && !!document.activeElement.closest('.term-agentes')`), '(R7) com o painel de conversas aberto o painel anda com o terminal e o foco fica dentro dele');
+      await arrasta(app, { sel: '.ws.active .term-tab', n: 0 }, { sel: '.ws.active .term-tab', n: 2 }, { lado: 'depois' });
+    } else console.log('  (sem painel de conversas nesta máquina: o caso fica em scripts/e2e-seletor-sessoes.js)');
+
+    // terminal morto: dispensa o painel, digita exit e arrasta a aba riscada
+    await dispensaPainel(app, 2);
+    await cliqueReal(app, '.ws.active .term-tab .term-pane-name', 2);
+    await app.send('Input.insertText', { text: 'exit' });
+    await tecla(app, 'Enter', 'Enter', 13);
+    await app.espera(`document.querySelectorAll('.ws.active .term-tab')[2].classList.contains('dead')`, 20000, 'terminal morto');
+    await marcaTerminais(app);
+    await arrasta(app, { sel: '.ws.active .term-tab', n: 2 }, { sel: '.ws.active .term-tab', n: 0 }, { lado: 'antes' });
+    afirma(igual(await ordemMarcas(app), { abas: [2, 0, 1], panes: [2, 0, 1] }) && (await app.ev(`document.querySelectorAll('.ws.active .term-tab')[0].classList.contains('dead')`)), '(F20) a aba de um terminal morto também reordena e continua riscada');
   });
 };
 
@@ -513,6 +557,24 @@ CENARIOS.editor = async () => {
     afirma(igual(await abasEditor(app, 0), ['a.txt', 'b.txt']), 'e a ordem do grupo continua a mesma');
     await arrasta(app, { sel: '.ws.active .dev-tab', n: 3 }, { sel: '.ws.active .dev-tab', n: 2 }, { lado: 'antes' }); // d antes de c no grupo 2
     afirma(igual(await abasEditor(app, 1), ['d.txt', 'c.txt']) && igual(await abasEditor(app, 0), ['a.txt', 'b.txt']), `dentro do grupo 2 o arraste funciona: ${(await abasEditor(app, 1)).join(', ')}`);
+  });
+};
+
+// T5: a página Terminal usa as mesmas funções (ws = terminalPage): o arraste vale lá e não mistura com os projetos
+CENARIOS['pagina-terminal'] = async () => {
+  await comApp({ projetos: ['p1'] }, async app => {
+    await app.ev(`document.querySelector('[data-page="terminal"]').click()`);
+    await app.espera(`document.querySelector('#page-terminal.active')`, 10000, 'página Terminal');
+    await novoTerminal(app, '#term-page'); await novoTerminal(app, '#term-page'); await novoTerminal(app, '#term-page');
+    const antes = await nomesTerminais(app, '#term-page');
+    await marcaTerminais(app, '#term-page');
+    const r = await arrasta(app, { sel: '#term-page .term-tab', n: 2 }, { sel: '#term-page .term-tab', n: 0 }, { lado: 'antes' });
+    afirma(r.iniciou && r.dragstarts === 1, `o arraste começa na página Terminal (dragstart ${r.dragstarts})`);
+    afirma(igual(await nomesTerminais(app, '#term-page'), [antes[2], antes[0], antes[1]]), `ordem das abas: ${(await nomesTerminais(app, '#term-page')).join(' | ')}`);
+    afirma(igual(await ordemMarcas(app, '#term-page'), { abas: [2, 0, 1], panes: [2, 0, 1] }), 'a grade da página Terminal acompanha as abas');
+    afirma((await restos(app)) === 0, 'nenhuma classe sobra');
+    // nada gravado: terminais não são persistidos
+    afirma(!JSON.stringify(lerConfig(app.sb)).includes(antes[0]), 'nenhum nome de terminal foi gravado no rendra-config.json (a ordem vale só na sessão)');
   });
 };
 
