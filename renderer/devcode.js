@@ -463,15 +463,18 @@
     });
   }
 
-  // Projeto movido: reordena o array (activeWs não muda), redesenha e só então persiste (o `active` gravado é um índice)
-  function moverWorkspace(deId, alvoId, depois) {
-    const ids = workspaces.map(w => String(w.id));
-    const r = window.RendraReordenar.moverPara(workspaces, ids.indexOf(deId), ids.indexOf(alvoId), depois);
+  // Projeto movido (por arraste ou pelo teclado): reordena o array (activeWs não muda), redesenha e só então persiste
+  // (o `active` gravado é um índice). `r` é o resultado de RendraReordenar.moverPara/moverPorDelta.
+  function aplicarOrdemWorkspaces(r) {
     if (!r.mudou) return;
     workspaces.splice(0, workspaces.length, ...r.lista);
     renderWsTabs();
     persist();
     anunciar(r.lista[r.indice].name, r.indice, r.lista.length);
+  }
+  function moverWorkspace(deId, alvoId, depois) {
+    const ids = workspaces.map(w => String(w.id));
+    aplicarOrdemWorkspaces(window.RendraReordenar.moverPara(workspaces, ids.indexOf(deId), ids.indexOf(alvoId), depois));
   }
 
   function startRename(ws, tabEl) {
@@ -993,14 +996,16 @@
 
   // Aba do editor movida dentro do grupo: o nome é sempre o do arquivo (sem renomear); group.active é um caminho, então
   // a aba ativa não precisa de ajuste de índice. Persiste a ordem (groups[].tabs).
-  function moverAbaDoEditor(group, dePath, alvoPath, depois) {
-    const r = window.RendraReordenar.moverPara(group.tabs, group.tabs.indexOf(dePath), group.tabs.indexOf(alvoPath), depois);
+  function aplicarOrdemAbasDoEditor(group, r) {
     if (!r.mudou) return;
     group.tabs.splice(0, group.tabs.length, ...r.lista);
     renderTabs(group);
     persist();
     const p = r.lista[r.indice];
     anunciar(files.get(p)?.name || baseName(p), r.indice, r.lista.length);
+  }
+  function moverAbaDoEditor(group, dePath, alvoPath, depois) {
+    aplicarOrdemAbasDoEditor(group, window.RendraReordenar.moverPara(group.tabs, group.tabs.indexOf(dePath), group.tabs.indexOf(alvoPath), depois));
   }
   // Runs on every edit: tab dots now, tree colors once per frame
   let decoFrame = 0;
@@ -1240,7 +1245,7 @@
     const tab = document.createElement('div');
     tab.className = 'term-tab';
     tab.draggable = true; // arraste uma aba sobre outra para reordenar os terminais (ligarArrasteTerminais)
-    tab.title = 'Arraste para reordenar';
+    tab.title = 'Arraste para reordenar, ou use Ctrl+Shift+Seta esquerda ou direita com a aba em foco';
     tab.setAttribute('role', 'tab');
     tab.tabIndex = 0;
     tab.setAttribute('aria-selected', 'false');
@@ -1570,14 +1575,19 @@
       barra: 'terminais', seletor: '.term-tab', escopo: () => ws.id, idDe: el => el.dataset.uid,
       mover: (de, alvo, depois) => {
         const ids = ws.terms.map(x => String(x.uid));
-        const r = window.RendraReordenar.moverPara(ws.terms, ids.indexOf(de), ids.indexOf(alvo), depois);
-        if (!r.mudou) return;
-        const movido = r.lista[r.indice];
-        aplicarOrdemTerminais(ws, r.lista);
-        focarTerminal(movido);
-        anunciar(movido.name || 'Terminal', r.indice, r.lista.length);
+        const movido = aplicarMovimentoTerminais(ws, window.RendraReordenar.moverPara(ws.terms, ids.indexOf(de), ids.indexOf(alvo), depois));
+        if (movido) focarTerminal(movido); // arrastar com o mouse leva o foco ao terminal movido; o teclado deixa o foco na aba
       },
     });
+  }
+
+  // Devolve o terminal movido (ou null se nada mudou)
+  function aplicarMovimentoTerminais(ws, r) {
+    if (!r.mudou) return null;
+    const movido = r.lista[r.indice];
+    aplicarOrdemTerminais(ws, r.lista);
+    anunciar(movido.name || 'Terminal', r.indice, r.lista.length);
+    return movido;
   }
 
   async function killTerminal(ws, t) {
@@ -1705,6 +1715,39 @@
       const grupo = ws.activeGroup;
       const proxima = grupo && RendraAtalhosIde.proximaAba(grupo.tabs, grupo.active, acao === 'proxima-aba' ? 1 : -1);
       if (proxima && !ev.repeat) showInGroup(ws, grupo, proxima);
+    }
+  }, true);
+
+  // ── Mover a aba em foco: Ctrl+Shift+Seta esquerda ou direita (abas de projetos, de terminais e do editor) ─────────
+  // A decisão é pura e separada de acaoDeAtalhoIde (RendraReordenar.moverAbaDeTecla): o terminal e o Monaco usam
+  // Ctrl+Shift+Seta para marcar por palavra, então a tecla só vale quando o foco está NUMA ABA, nunca no xterm,
+  // no editor ou num campo (input.ws-rename, input.term-rename). Depois de mover, o foco volta para a aba movida.
+  const focaAba = (cont, seletor) => { const el = cont && cont.querySelector(seletor); if (el) el.focus(); };
+  document.addEventListener('keydown', ev => {
+    const delta = window.RendraReordenar.moverAbaDeTecla(ev);
+    if (!delta || modalAberto()) return;
+    const aba = ev.target;
+    if (!aba || aba.nodeType !== 1 || !aba.matches('[role=tab]')) return;
+    const cont = aba.closest('#ws-tabs, .dev-term-tabs, .dev-tabs');
+    if (!cont) return;
+    ev.preventDefault();
+    const R = window.RendraReordenar;
+    if (cont.id === 'ws-tabs') {
+      const id = String(aba.dataset.id);
+      aplicarOrdemWorkspaces(R.moverPorDelta(workspaces, workspaces.findIndex(w => String(w.id) === id), delta));
+      focaAba(cont, `.ws-tab[data-id="${id}"]`);
+    } else if (cont.classList.contains('dev-term-tabs')) {
+      const ws = [...workspaces, terminalPage].find(w => w && w.refs.termTabs === cont);
+      if (!ws) return;
+      const uid = String(aba.dataset.uid);
+      aplicarMovimentoTerminais(ws, R.moverPorDelta(ws.terms, ws.terms.findIndex(x => String(x.uid) === uid), delta));
+      focaAba(cont, `.term-tab[data-uid="${uid}"]`);
+    } else {
+      const grupo = workspaces.flatMap(w => w.groups).find(g => g.tabsEl === cont);
+      if (!grupo) return;
+      const caminho = aba.dataset.path;
+      aplicarOrdemAbasDoEditor(grupo, R.moverPorDelta(grupo.tabs, grupo.tabs.indexOf(caminho), delta));
+      [...cont.querySelectorAll('.dev-tab')].find(el => el.dataset.path === caminho)?.focus();
     }
   }, true);
 

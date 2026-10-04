@@ -79,3 +79,39 @@ test('arraste só vale com o tipo próprio da IDE e na mesma barra', () => {
   assert.strictEqual(aceitaArraste([TIPO], null, 'projetos'), false);
   assert.strictEqual(aceitaArraste(undefined, est, 'projetos'), false);
 });
+
+// ── Teclado: Ctrl+Shift+Seta (função própria, fora de acaoDeAtalhoIde) ──────────────────────────────────────────
+const { moverAbaDeTecla } = require('../renderer/reordenar-abas');
+const { acaoDeAtalhoIde } = require('../renderer/atalhos-ide');
+const { acaoDeTecla } = require('../renderer/terminal-keys');
+const tecla = (code, mods = [], extra = {}) => ({
+  type: 'keydown', code, key: code, repeat: false,
+  ctrlKey: mods.includes('ctrl'), shiftKey: mods.includes('shift'), altKey: mods.includes('alt'), metaKey: mods.includes('meta'), ...extra,
+});
+
+test('Ctrl+Shift+Seta esquerda move -1 e direita +1, nos três sistemas', () => {
+  assert.strictEqual(moverAbaDeTecla(tecla('ArrowLeft', ['ctrl', 'shift'])), -1);
+  assert.strictEqual(moverAbaDeTecla(tecla('ArrowRight', ['ctrl', 'shift'])), 1);
+  assert.strictEqual(moverAbaDeTecla(tecla('ArrowRight', ['ctrl', 'shift'], { repeat: true })), 1);
+});
+
+test('só a combinação exata vale: sem Shift, sem Ctrl, com Alt ou Meta, outras setas e keyup não', () => {
+  for (const mods of [['ctrl'], ['shift'], [], ['ctrl', 'shift', 'alt'], ['ctrl', 'shift', 'meta'], ['meta', 'shift']]) {
+    assert.strictEqual(moverAbaDeTecla(tecla('ArrowLeft', mods)), null, mods.join('+'));
+  }
+  assert.strictEqual(moverAbaDeTecla(tecla('ArrowUp', ['ctrl', 'shift'])), null);
+  assert.strictEqual(moverAbaDeTecla(tecla('Tab', ['ctrl', 'shift'])), null);
+  assert.strictEqual(moverAbaDeTecla(tecla('ArrowLeft', ['ctrl', 'shift'], { type: 'keyup' })), null);
+  assert.strictEqual(moverAbaDeTecla(null), null);
+});
+
+test('o terminal e o editor continuam com o Ctrl+Shift+Seta: acaoDeAtalhoIde e acaoDeTecla não o tratam', () => {
+  for (const code of ['ArrowLeft', 'ArrowRight']) {
+    for (const plataforma of ['win32', 'linux', 'darwin']) {
+      const ev = tecla(code, ['ctrl', 'shift']);
+      assert.strictEqual(acaoDeAtalhoIde(ev, plataforma, { foraDoTerminal: true }), null, `${code} ${plataforma} fora do terminal`);
+      assert.strictEqual(acaoDeAtalhoIde(ev, plataforma, { foraDoTerminal: false }), null, `${code} ${plataforma} no terminal`);
+      assert.deepStrictEqual(acaoDeTecla(ev, plataforma, 'powershell'), { tipo: 'deixar' }, `${code} ${plataforma}: o xterm manda a tecla ao shell`);
+    }
+  }
+});

@@ -41,7 +41,18 @@
   const aceitaArraste = (types, estado, barra) =>
     !!estado && estado.barra === barra && !!types && Array.prototype.includes.call(types, TIPO);
 
-  const api = { TIPO, moverPara, moverPorDelta, indiceDe, anuncio, aceitaArraste };
+  // Ctrl+Shift+Seta esquerda (-1) ou direita (+1) com o foco numa aba. Função PRÓPRIA, fora de acaoDeAtalhoIde
+  // (atalhos-ide.js): essa decide as teclas do xterm, e o terminal e o Monaco usam Ctrl+Shift+Seta para marcar por
+  // palavra. Mesma tecla nos três sistemas (Ctrl+Shift não conflita com o Cmd do macOS). Só keydown, sem Alt nem Meta.
+  function moverAbaDeTecla(ev) {
+    if (!ev || ev.type !== 'keydown') return null;
+    if (!ev.ctrlKey || !ev.shiftKey || ev.altKey || ev.metaKey) return null;
+    if (ev.code === 'ArrowLeft') return -1;
+    if (ev.code === 'ArrowRight') return 1;
+    return null;
+  }
+
+  const api = { TIPO, moverPara, moverPorDelta, indiceDe, anuncio, aceitaArraste, moverAbaDeTecla };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RendraReordenar = api;
 })(typeof window !== 'undefined' ? window : this);

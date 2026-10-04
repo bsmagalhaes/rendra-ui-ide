@@ -578,6 +578,134 @@ CENARIOS['pagina-terminal'] = async () => {
   });
 };
 
+const setaCS = (app, dir) => tecla(app, dir === 'esq' ? 'ArrowLeft' : 'ArrowRight', dir === 'esq' ? 'ArrowLeft' : 'ArrowRight', dir === 'esq' ? 37 : 39, 10); // Ctrl+Shift
+const foca = (app, seletor, n) => app.ev(`document.querySelectorAll(${JSON.stringify(seletor)})[${n}].focus()`);
+const ativoEh = (app, js) => app.ev(`(() => { const a = document.activeElement; return !!a && (${js}); })()`);
+const anuncio = app => app.ev(`document.getElementById('anuncio-abas').textContent`);
+const esperaAnuncio = async (app, re, ms = 3000) => { try { await app.espera(`${re}.test(document.getElementById('anuncio-abas').textContent)`, ms); return true; } catch { return false; } };
+
+// T6: abas focáveis (role=tab, tabindex 0, aria-selected, aria-label), região viva única e Ctrl+Shift+Seta só com o foco numa aba
+CENARIOS.teclado = async () => {
+  await comApp({ projetos: ['p1', 'p2', 'p3'], ativo: 1, grupos: { p2: [{ tabs: ['@a.txt', '@b.txt', '@c.txt'], active: '@a.txt' }] } }, async (app, sb) => {
+    await app.espera(`document.querySelectorAll('.ws.active .dev-tab').length === 3`, 40000, 'abas do editor');
+    await novoTerminal(app); await novoTerminal(app); await novoTerminal(app);
+    for (const n of [0, 1, 2]) await dispensaPainel(app, n);
+    await marcaTerminais(app);
+
+    // ── estrutura acessível ──
+    const est = await app.ev(`(() => {
+      const tabs = s => [...document.querySelectorAll(s)];
+      const regiao = document.getElementById('anuncio-abas');
+      return {
+        listas: ['#ws-tabs', '.ws.active .dev-term-tabs', '.ws.active .dev-tabs'].map(s => document.querySelector(s)?.getAttribute('role')),
+        todasTab: ['#ws-tabs .ws-tab', '.ws.active .term-tab', '.ws.active .dev-tab'].map(s => tabs(s).length > 0 && tabs(s).every(e => e.getAttribute('role') === 'tab' && e.tabIndex === 0 && e.hasAttribute('aria-label') && e.hasAttribute('aria-selected'))),
+        selProjetos: tabs('#ws-tabs .ws-tab[aria-selected="true"]').map(e => e.querySelector('.ws-tab-name').textContent),
+        selEditor: tabs('.ws.active .dev-tab[aria-selected="true"]').map(e => e.querySelector('.dev-tab-name').textContent),
+        rotulos: tabs('#ws-tabs .ws-tab').map(e => e.getAttribute('aria-label')),
+        vivas: document.querySelectorAll('#anuncio-abas').length,
+        regiaoFora: !regiao.closest('[role=tablist]') && regiao.getAttribute('aria-live') === 'polite',
+        botoes: [...tabs('.ws.active .term-tab button'), ...tabs('#ws-tabs .ws-tab-close'), ...tabs('.ws.active .dev-tab-close')].every(b => !!b.getAttribute('aria-label')),
+      };
+    })()`);
+    afirma(igual(est.listas, ['tablist', 'tablist', 'tablist']), 'as três barras são role=tablist');
+    afirma(igual(est.todasTab, [true, true, true]), 'toda aba das três barras tem role=tab, tabindex 0, aria-label e aria-selected');
+    afirma(igual(est.selProjetos, ['p2']) && igual(est.selEditor, ['a.txt']), `aria-selected: projeto ativo (${est.selProjetos}) e aba ativa do grupo (${est.selEditor})`);
+    afirma(igual(est.rotulos, ['p1', 'p2', 'p3']), 'o aria-label de cada aba de projeto é o nome');
+    afirma(est.vivas === 1 && est.regiaoFora, 'existe uma só região aria-live="polite", fora das tablist');
+    afirma(est.botoes, 'os botões ✎ e ✕ dentro das abas têm aria-label em português');
+
+    // ── Tab alcança as abas ──
+    await foca(app, '#ws-tabs .ws-tab', 0);
+    await tecla(app, 'Tab', 'Tab', 9);
+    afirma(await ativoEh(app, `a.classList.contains('ws-tab') && a.querySelector('.ws-tab-name').textContent === 'p2'`), 'a tecla Tab leva o foco da primeira aba de projeto à segunda');
+    await tecla(app, 'Tab', 'Tab', 9, 8);
+    afirma(await ativoEh(app, `a.classList.contains('ws-tab') && a.querySelector('.ws-tab-name').textContent === 'p1'`), 'Shift+Tab volta');
+
+    // ── projetos: Ctrl+Shift+Seta ──
+    await foca(app, '#ws-tabs .ws-tab', 1); // p2
+    await setaCS(app, 'dir');
+    afirma(igual(await nomesProjetos(app), ['p1', 'p3', 'p2']), `Ctrl+Shift+Seta direita na aba do meio: ${await nomesDe(app)}`);
+    afirma(await ativoEh(app, `a.classList.contains('ws-tab') && a.querySelector('.ws-tab-name').textContent === 'p2'`), 'o foco continua na aba movida (p2)');
+    afirma(await esperaAnuncio(app, '/^p2 movida para a posição 3 de 3$/'), `a região viva anuncia: "${await anuncio(app)}"`);
+    afirma((await ativoDosProjetos(app)) === 'p2', 'mover não troca o projeto ativo');
+    await setaCS(app, 'dir');
+    afirma(igual(await nomesProjetos(app), ['p1', 'p3', 'p2']), 'na ponta direita não faz nada');
+    await setaCS(app, 'esq');
+    await setaCS(app, 'esq');
+    afirma(igual(await nomesProjetos(app), ['p2', 'p1', 'p3']), `duas vezes à esquerda: ${await nomesDe(app)}`);
+    await setaCS(app, 'esq');
+    afirma(igual(await nomesProjetos(app), ['p2', 'p1', 'p3']), 'na ponta esquerda não faz nada');
+    const grav = await esperaConfig(sb, w => igual(w.list.map(x => x.name), ['p2', 'p1', 'p3']));
+    afirma(!!grav && grav.active === 0, `a ordem pelo teclado foi gravada (${grav ? grav.list.map(x => x.name).join(', ') : 'não gravou'}, ativo ${grav?.active})`);
+
+    // ── terminais ──
+    await foca(app, '.ws.active .term-tab', 1);
+    await setaCS(app, 'dir');
+    afirma(igual(await ordemMarcas(app), { abas: [0, 2, 1], panes: [0, 2, 1] }), 'terminais: Ctrl+Shift+Seta direita na aba do meio troca a ordem das abas e da grade');
+    afirma(await ativoEh(app, `a.classList.contains('term-tab') && a.dataset.e2e === '1'`), 'o foco fica na aba do terminal movido (não vai para o xterm)');
+    afirma(await esperaAnuncio(app, '/movida para a posição 3 de 3$/'), `terminais: a região viva anuncia "${await anuncio(app)}"`);
+    await setaCS(app, 'dir');
+    afirma(igual(await ordemMarcas(app), { abas: [0, 2, 1], panes: [0, 2, 1] }), 'terminais: na ponta não faz nada');
+
+    // ── abas do editor ──
+    await foca(app, '.ws.active .dev-tab', 1);
+    await setaCS(app, 'dir');
+    afirma(igual(await abasEditor(app), ['a.txt', 'c.txt', 'b.txt']), `editor: Ctrl+Shift+Seta direita na aba do meio: ${(await abasEditor(app)).join(', ')}`);
+    afirma(await ativoEh(app, `a.classList.contains('dev-tab') && a.querySelector('.dev-tab-name').textContent === 'b.txt'`), 'o foco continua na aba movida (b.txt)');
+    afirma(await esperaAnuncio(app, '/^b\\.txt movida para a posição 3 de 3$/'), `editor: a região viva anuncia "${await anuncio(app)}"`);
+    afirma((await ativaEditor(app)) === 'a.txt', 'a aba ativa do editor segue a mesma');
+    const gravE = await esperaConfig(sb, w => igual(w.list.find(x => x.name === 'p2')?.groups[0]?.tabs.map(base), ['a.txt', 'c.txt', 'b.txt']));
+    afirma(!!gravE, 'a ordem das abas do editor pelo teclado foi gravada');
+
+    // ── o terminal e o Monaco continuam com o Ctrl+Shift+Seta ──
+    await cliqueReal(app, '.ws.active .term-tab .term-pane-name', 0);
+    afirma(await focoNoPane(app, 0), 'foco no xterm do primeiro terminal');
+    await app.send('Input.insertText', { text: '$k=[Console]::ReadKey($true); "KEY:$($k.Key):$($k.Modifiers)"' });
+    await tecla(app, 'Enter', 'Enter', 13);
+    await sleep(800);
+    const abasAntes = await ordemMarcas(app);
+    await setaCS(app, 'esq');
+    await app.espera(`/KEY:LeftArrow:/.test(document.querySelector('.ws.active .term-pane').querySelector('.xterm-rows').textContent)`, 8000, 'o shell recebeu a tecla').catch(() => { });
+    const saida = await app.ev(`document.querySelector('.ws.active .term-pane').querySelector('.xterm-rows').textContent.replace(/\\u00a0/g, ' ')`);
+    afirma(/KEY:LeftArrow:.*Shift.*Control|KEY:LeftArrow:.*Control.*Shift/.test(saida), 'Ctrl+Shift+Seta esquerda com o foco no xterm chega ao shell (ReadKey leu LeftArrow com Shift e Control)');
+    afirma(igual(await ordemMarcas(app), abasAntes) && igual(await nomesProjetos(app), ['p2', 'p1', 'p3']), 'e com o foco no xterm nenhuma aba se moveu');
+    await app.ev(`document.querySelector('.ws.active .monaco-editor textarea').focus()`); // o foco do Monaco, como o usuário o deixa ao editar
+    await app.espera(`!!document.activeElement.closest('.monaco-editor')`, 5000, 'foco no Monaco');
+    await tecla(app, 'Home', 'Home', 36);
+    const abasEd = await abasEditor(app);
+    await setaCS(app, 'dir');
+    await sleep(200);
+    afirma((await app.ev(`document.querySelectorAll('.ws.active .dev-group .selected-text').length`)) > 0, 'no Monaco, Ctrl+Shift+Seta direita seleciona a palavra (o editor não perdeu a tecla)');
+    afirma(igual(await abasEditor(app), abasEd), 'e as abas do editor não se moveram');
+
+    // ── (9e) com o foco no input do renomear a tecla não move nada ──
+    await duploClique(app, '#ws-tabs .ws-tab .ws-tab-name', 0);
+    await app.espera(`!!document.querySelector('#ws-tabs input.ws-rename')`, 5000, 'input de renomear');
+    await setaCS(app, 'dir');
+    const valores = await app.ev("[...document.querySelectorAll('#ws-tabs .ws-tab')].map(t => t.querySelector('.ws-tab-name')?.textContent ?? t.querySelector('input').value)");
+    afirma(igual(valores, ['p2', 'p1', 'p3']), `(9e) com o input do renomear em foco o atalho não move a aba (${valores.join(', ')})`);
+    afirma(await app.ev("!!document.querySelector('#ws-tabs input.ws-rename')"), '(9e) o input do renomear continua aberto');
+    // (R-e) o nome vem do usuário: nunca vira HTML no aria-label nem na região viva
+    await app.send('Input.insertText', { text: '"><b>x</b>' });
+    await tecla(app, 'Enter', 'Enter', 13);
+    await app.espera(`!document.querySelector('#ws-tabs input.ws-rename')`, 5000, 'fim do renomear');
+    await foca(app, '#ws-tabs .ws-tab', 0);
+    await setaCS(app, 'dir');
+    afirma(await esperaAnuncio(app, '/^"><b>x<\\/b> movida para a posição 2 de 3$/'), `(R-e) o nome com HTML aparece como texto na região viva: ${await anuncio(app)}`);
+    afirma(!(await app.ev(`!!document.querySelector('#ws-tabs b, #anuncio-abas b')`)) && (await app.ev(`document.querySelectorAll('#ws-tabs .ws-tab')[1].getAttribute('aria-label')`)) === '"><b>x</b>', '(R-e) nenhum elemento <b> foi criado e o aria-label é o texto puro');
+  });
+
+  // a ordem de projetos feita pelo teclado volta depois de reabrir
+  await comApp({ projetos: ['p1', 'p2', 'p3'], ativo: 0 }, async (app, sb) => {
+    await foca(app, '#ws-tabs .ws-tab', 0);
+    await setaCS(app, 'dir');
+    await setaCS(app, 'dir');
+    await esperaConfig(sb, w => igual(w.list.map(x => x.name), ['p2', 'p3', 'p1']));
+    const app2 = await app.reiniciar();
+    afirma(igual(await nomesProjetos(app2), ['p2', 'p3', 'p1']) && (await ativoDosProjetos(app2)) === 'p1', `teclado + reabrir: ${await nomesDe(app2)}, ativo ${await ativoDosProjetos(app2)}`);
+  });
+};
+
 // ── Execução ────────────────────────────────────────────────────────────────
 (async () => {
   const nomes = ESCOLHIDOS || Object.keys(CENARIOS);
