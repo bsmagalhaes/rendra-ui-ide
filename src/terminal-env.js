@@ -20,16 +20,27 @@ function urlWebSegura(valor) {
 // BROWSER que o usuário já definiu (no Windows ou no perfil da distro) continua valendo.
 const BROWSER_NO_WSL = 'explorer.exe';
 
-function ambientePty(base, { wsl } = {}) {
+// `marca`: token aleatório do terminal (RENDRA_TERM). Quem herda a marca nasceu daquele terminal, e é assim que a IDE
+// encontra, ao fechar, a sessão Linux dele (src/encerrar-proc.js). No WSL ela atravessa pelo WSLENV.
+const MARCA = /^[0-9a-f]{16,64}$/;
+
+function ambientePty(base, { wsl, marca } = {}) {
   const env = { ...base, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
-  if (!wsl) return env;
   const achar = nome => Object.keys(env).find(k => k.toUpperCase() === nome);
+  const levar = nome => { // o WSLENV leva a variável do Windows para dentro da distro, como texto (/u)
+    const kWslenv = achar('WSLENV') || 'WSLENV';
+    const atual = String(env[kWslenv] || '').split(':').filter(Boolean);
+    if (!atual.some(i => i.split('/')[0].toUpperCase() === nome)) atual.push(`${nome}/u`);
+    env[kWslenv] = atual.join(':');
+  };
+  if (typeof marca === 'string' && MARCA.test(marca)) {
+    env.RENDRA_TERM = marca;
+    if (wsl) levar('RENDRA_TERM');
+  }
+  if (!wsl) return env;
   if (achar('BROWSER')) return env; // o usuário já escolheu
   env.BROWSER = BROWSER_NO_WSL;
-  const kWslenv = achar('WSLENV') || 'WSLENV';
-  const atual = String(env[kWslenv] || '').split(':').filter(Boolean);
-  if (!atual.some(i => i.split('/')[0].toUpperCase() === 'BROWSER')) atual.push('BROWSER/u');
-  env[kWslenv] = atual.join(':');
+  levar('BROWSER');
   return env;
 }
 

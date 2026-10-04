@@ -61,3 +61,18 @@ test('pty:create no WSL leva BROWSER, e o terminal do Windows não', { skip: pro
     if (salvo.w !== undefined) process.env.WSLENV = salvo.w;
   }
 });
+
+test('ambientePty: a marca RENDRA_TERM vai ao pty e, no WSL, atravessa pelo WSLENV sem duplicar', () => {
+  const tok = 'ab'.repeat(8);
+  assert.strictEqual(ambientePty({}, { wsl: false, marca: tok }).RENDRA_TERM, tok);
+  const w = ambientePty({ WSLENV: 'X/u' }, { wsl: true, marca: tok });
+  assert.strictEqual(w.RENDRA_TERM, tok);
+  assert.deepStrictEqual(w.WSLENV.split(':').sort(), ['BROWSER/u', 'RENDRA_TERM/u', 'X/u']);
+  // BROWSER já definido pelo usuário: a marca ainda atravessa
+  assert.ok(ambientePty({ BROWSER: 'b' }, { wsl: true, marca: tok }).WSLENV.split(':').includes('RENDRA_TERM/u'));
+  assert.deepStrictEqual(ambientePty({ WSLENV: 'RENDRA_TERM/u' }, { wsl: true, marca: tok }).WSLENV.split(':').filter(i => i.startsWith('RENDRA_TERM')), ['RENDRA_TERM/u']);
+  // marca fora do formato (token de 16 a 64 hex) é ignorada: nada de dado externo no ambiente
+  assert.strictEqual(ambientePty({}, { wsl: true, marca: 'x; calc' }).RENDRA_TERM, undefined);
+  // sem marca, nada muda para quem chama como antes
+  assert.strictEqual(ambientePty({}, { wsl: true }).RENDRA_TERM, undefined);
+});
