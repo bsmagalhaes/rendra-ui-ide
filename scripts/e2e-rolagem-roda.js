@@ -141,7 +141,7 @@ for ($i = 0; $i -lt ${vezes}; $i++) { [void][W.U]::PostMessage($h, 0x020A, $w, $
     // medidas no terminal: primeira linha visível "linha N" (o buffer tem "linha 1..1000")
     const primeira = () => ev(`(() => { for (const d of document.querySelectorAll('${T} .xterm-rows > div')) { const m = d.textContent.replace(/\\u00a0/g, ' ').match(/^linha (\\d+)$/); if (m) return Number(m[1]); } return null; })()`);
     // WheelEvent sintético: wheelDeltaY entra por defineProperty (é o campo legado que o Chromium fixa em 120 por entalhe)
-    const sintetica = (sel, { dy, wy, ctrl = false, shift = false, alt = false, modoDelta = 0 }) => ev(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); const r = el.getBoundingClientRect(); const e = new WheelEvent('wheel', { bubbles: true, cancelable: true, composed: true, view: window, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, deltaY: ${dy}, deltaMode: ${modoDelta}, ctrlKey: ${ctrl}, shiftKey: ${shift}, altKey: ${alt} }); Object.defineProperty(e, 'wheelDeltaY', { value: ${wy} }); el.dispatchEvent(e); return e.defaultPrevented; })()`);
+    const sintetica = (sel, { dy, wy, ctrl = false, shift = false, alt = false, modoDelta = 0 }) => ev(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); const r = el.getBoundingClientRect(); const e = new WheelEvent('wheel', { bubbles: true, cancelable: true, composed: true, view: window, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, deltaY: ${dy}, deltaMode: ${modoDelta}, wheelDeltaY: ${wy}, ctrlKey: ${ctrl}, shiftKey: ${shift}, altKey: ${alt} }); el.dispatchEvent(e); return e.defaultPrevented; })()`);
     const SCR = `${T} .xterm-screen`;
     const PX = 100 / 3;
     const TRACKPAD_ANTES = -3;
@@ -231,6 +231,16 @@ for ($i = 0; $i -lt ${vezes}; $i++) { [void][W.U]::PostMessage($h, 0x020A, $w, $
       let n = relatorios(await escritas());
       medidas[`mouse15 ${rotulo}`] = n;
       afirma(n === 15, `${rotulo}: sintético de 15 linhas manda 15 relatórios de roda, sem recursão (${n})`);
+      // 18 linhas (deltaY 600) e uma página (deltaMode 2): sem o WeakSet, as cópias passariam pelo filtro e multiplicariam
+      await zeraEscritas();
+      await sintetica(SCR, { dy: -18 * PX, wy: 120 }); await sleep(500);
+      n = relatorios(await escritas());
+      afirma(n === 18, `${rotulo}: sintético de 18 linhas (deltaY 600) manda 18 relatórios, sem multiplicar (${n})`);
+      const linhasPag = await ev(`document.querySelectorAll('${T} .xterm-rows > div').length`);
+      await zeraEscritas();
+      await sintetica(SCR, { dy: 1, wy: -120, modoDelta: 2 }); await sleep(600);
+      n = relatorios(await escritas());
+      afirma(n === linhasPag, `${rotulo}: deltaMode 2 (uma página) manda ${linhasPag} relatórios, sem multiplicar (${n})`);
       await zeraEscritas();
       await sintetica(SCR, { dy: -PX, wy: 120 }); await sleep(400);
       n = relatorios(await escritas());
