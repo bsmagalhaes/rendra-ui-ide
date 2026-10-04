@@ -437,7 +437,8 @@
     const depois = (e, aba) => { const r = aba.getBoundingClientRect(); return e.clientX > r.left + r.width / 2; };
     cont.addEventListener('dragstart', e => {
       const aba = abaDe(e);
-      if (!aba || !cont.contains(aba)) return;
+      // só o arraste da PRÓPRIA aba: o texto selecionado de um input dentro dela (renomear) também dispara dragstart
+      if (!aba || e.target !== aba || !cont.contains(aba)) return;
       arrasteAba = { barra: cfg.barra, escopo: cfg.escopo(), id: cfg.idDe(aba) };
       aba.classList.add('dragging');
       e.dataTransfer.effectAllowed = 'move';
@@ -987,11 +988,14 @@
   }
 
   function renderTabs(group) {
+    // renderTabs refaz o innerHTML (a cada edição): a aba focada seria perdida, então o foco volta à mesma aba, pelo caminho
+    const focada = group.tabsEl.contains(document.activeElement) ? document.activeElement.closest?.('.dev-tab')?.dataset.path : null;
     group.tabsEl.innerHTML = group.tabs.map(p => `
       <div class="dev-tab${p === group.active ? ' active' : ''}${isDirty(p) ? ' dirty' : ''}" data-path="${esc(p)}" role="tab" tabindex="0" draggable="true" aria-selected="${p === group.active}" aria-label="${esc(files.get(p)?.name || baseName(p))}" title="${esc(p)}">
         <span class="dev-tab-name">${esc(files.get(p)?.name || baseName(p))}</span>
         <span class="dev-tab-close" role="button" aria-label="Fechar ${esc(files.get(p)?.name || baseName(p))}" title="Fechar (Ctrl+W)">${isDirty(p) ? '●' : '×'}</span>
       </div>`).join('');
+    if (focada != null) [...group.tabsEl.querySelectorAll('.dev-tab')].find(el => el.dataset.path === focada)?.focus({ preventScroll: true });
   }
 
   // Aba do editor movida dentro do grupo: o nome é sempre o do arquivo (sem renomear); group.active é um caminho, então
@@ -1382,6 +1386,10 @@
       if (e.target.closest('button, input')) return;
       focarTerminal(t);
     });
+    // botão do meio e botão direito na aba também focam o terminal (como o mousedown da versão anterior); o click só dispara com o esquerdo
+    const focaSemBotao = e => { if (!e.target.closest('button, input')) focarTerminal(t); };
+    tab.addEventListener('auxclick', focaSemBotao);
+    tab.addEventListener('contextmenu', focaSemBotao);
     ws.terms.push(t);
     layoutTerminals(ws);
     fitTerm(t);
@@ -1749,6 +1757,15 @@
       aplicarOrdemAbasDoEditor(grupo, R.moverPorDelta(grupo.tabs, grupo.tabs.indexOf(caminho), delta));
       [...cont.querySelectorAll('.dev-tab')].find(el => el.dataset.path === caminho)?.focus();
     }
+  }, true);
+
+  // Enter e Espaço com o foco NA aba ativam a aba como o clique (padrão ARIA de tabs): o clique delegado de cada barra faz o resto
+  document.addEventListener('keydown', ev => {
+    if ((ev.key !== 'Enter' && ev.key !== ' ') || ev.ctrlKey || ev.shiftKey || ev.altKey || ev.metaKey || ev.repeat || modalAberto()) return;
+    const aba = ev.target;
+    if (!aba || aba.nodeType !== 1 || !aba.matches('[role=tab]') || !aba.closest('#ws-tabs, .dev-term-tabs, .dev-tabs')) return;
+    ev.preventDefault(); // o Espaço não rola a página
+    aba.click();
   }, true);
 
   window.devcode = {

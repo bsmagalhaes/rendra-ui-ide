@@ -2,7 +2,7 @@
 // item ativo acompanhando, o tipo próprio do arraste e o anúncio.
 const test = require('node:test');
 const assert = require('node:assert');
-const { moverPara, moverPorDelta, indiceDe, anuncio, aceitaArraste, TIPO } = require('../renderer/reordenar-abas');
+const { moverPara, moverPorDelta, anuncio, aceitaArraste, TIPO } = require('../renderer/reordenar-abas');
 
 test('arraste: o terceiro vai para antes do primeiro', () => {
   const r = moverPara(['a', 'b', 'c'], 2, 0, false);
@@ -61,7 +61,7 @@ test('o item de referência (o ativo) é acompanhado pelo índice novo', () => {
   const projetos = ['p1', 'p2', 'p3'];
   const ativo = 'p2';
   const r = moverPara(projetos, 2, 0, false);
-  assert.strictEqual(indiceDe(r.lista, ativo), 2); // o ativo andou de 1 para 2, o movido ficou em 0
+  assert.strictEqual(r.lista.indexOf(ativo), 2); // o ativo andou de 1 para 2, o movido ficou em 0
   assert.strictEqual(r.lista[r.indice], 'p3');
 });
 

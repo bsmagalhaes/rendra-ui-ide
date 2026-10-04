@@ -31,9 +31,6 @@
     return moverPara(lista, de, alvo, delta > 0);
   }
 
-  // Posição do item numa lista depois do movimento, para acompanhar um item de referência (por exemplo o ativo)
-  const indiceDe = (lista, item) => lista.indexOf(item);
-
   // Texto lido pelo leitor de tela depois de cada movimento (posição é 0-based na entrada, 1-based na frase)
   const anuncio = (nome, indice, total) => `${nome} movida para a posição ${indice + 1} de ${total}`;
 
@@ -52,7 +49,7 @@
     return null;
   }
 
-  const api = { TIPO, moverPara, moverPorDelta, indiceDe, anuncio, aceitaArraste, moverAbaDeTecla };
+  const api = { TIPO, moverPara, moverPorDelta, anuncio, aceitaArraste, moverAbaDeTecla };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RendraReordenar = api;
 })(typeof window !== 'undefined' ? window : this);

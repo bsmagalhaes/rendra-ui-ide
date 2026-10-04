@@ -278,6 +278,26 @@ CENARIOS.terminais = async () => {
     await cliqueReal(app, '.ws.active .term-tab .term-pane-name', 1);
     afirma(igual(await ordemMarcas(app), { abas: [0, 1, 2], panes: [0, 1, 2] }) && (await app.ev('window.__dragstarts')) === 0, 'um clique simples não reordena nem inicia arraste');
 
+    // renomear terminal: com o input aberto a aba não é arrastável e o mouse marca o texto (nada de arraste)
+    await cliqueReal(app, '.ws.active .term-tab [data-act="rename"]', 1);
+    await app.espera(`!!document.querySelector('.ws.active .term-tab input.term-rename')`, 5000, 'input de renomear terminal');
+    afirma(await app.ev(`document.querySelectorAll('.ws.active .term-tab')[1].draggable === false`), 'renomear terminal: a aba deixa de ser arrastável enquanto o input está aberto');
+    await app.send('Input.insertText', { text: 'terminal-comprido' });
+    const selR = await marcaNoInput(app, '.ws.active .term-tab input.term-rename');
+    afirma(!!selR && selR.dragstarts === 0 && selR.b > selR.a, `renomear terminal: o mouse marca o texto do input sem iniciar arraste (seleção ${selR?.a}-${selR?.b}, dragstarts ${selR?.dragstarts})`);
+    // com o texto todo selecionado, arrastar a partir do input é o arraste NATIVO do texto: não pode reordenar a aba
+    await app.ev(`document.querySelector('.ws.active .term-tab input.term-rename').select()`);
+    await arrasta(app, { sel: '.ws.active .term-tab input.term-rename' }, { sel: '.ws.active .term-tab', n: 0 }, { lado: 'antes' });
+    afirma(igual(await ordemMarcas(app), { abas: [0, 1, 2], panes: [0, 1, 2] }) && (await restos(app)) === 0, 'renomear terminal: arrastar o texto selecionado do input até outra aba não move a aba');
+    await app.ev(`document.querySelector('.ws.active .term-tab input.term-rename')?.focus()`);
+    await tecla(app, 'Escape', 'Escape', 27);
+    await app.espera(`!document.querySelector('.ws.active .term-tab input.term-rename')`, 5000, 'fim do renomear terminal');
+    afirma(await app.ev(`document.querySelectorAll('.ws.active .term-tab')[1].draggable === true`), 'renomear terminal: ao terminar a aba volta a ser arrastável');
+    await arrasta(app, { sel: '.ws.active .term-tab', n: 1 }, { sel: '.ws.active .term-tab', n: 0 }, { lado: 'antes' });
+    afirma(igual(await ordemMarcas(app), { abas: [1, 0, 2], panes: [1, 0, 2] }), 'e depois de renomear o arraste da aba volta a funcionar');
+    await arrasta(app, { sel: '.ws.active .term-tab', n: 0 }, { sel: '.ws.active .term-tab', n: 1 }, { lado: 'depois' });
+    afirma(igual(await ordemMarcas(app), { abas: [0, 1, 2], panes: [0, 1, 2] }), 'e a ordem volta a 0, 1, 2');
+
     // soltar a aba do terminal sobre o xterm não digita nada no shell (tipo próprio do arraste, nunca text/plain)
     const xterm = await caixa(app, '.ws.active .term-pane .xterm-screen', 1);
     const textoXterm = () => app.ev(`[...document.querySelectorAll('.ws.active .term-pane')].map(p => p.querySelector('.xterm-rows').textContent).join('|')`);
@@ -491,12 +511,16 @@ CENARIOS.editor = async () => {
   await comApp({ projetos: ['p1'], grupos: { p1: [{ tabs: ['@a.txt', '@b.txt', '@c.txt'], active: '@a.txt' }] } }, async (app, sb) => {
     await app.espera(`document.querySelectorAll('.ws.active .dev-tab').length === 3`, 40000, 'três abas do editor restauradas');
     afirma(igual(await abasEditor(app), ['a.txt', 'b.txt', 'c.txt']) && (await ativaEditor(app)) === 'a.txt', 'partida: a, b, c com a ativa');
+    // o persist() pendente da restauração das abas (debounce de 300 ms) disparava DEPOIS do arraste e gravava a ordem nova por acaso:
+    // espera a gravação da restauração acabar, para que só o persist() da reordenação possa gravar a ordem nova
+    await sleep(1200);
+    afirma(igual(lerConfig(sb).devcode.workspaces.list[0].groups[0].tabs.map(base), ['a.txt', 'b.txt', 'c.txt']), 'antes do arraste o arquivo de config ainda tem a ordem a, b, c');
     const r = await arrasta(app, { sel: '.ws.active .dev-tab', n: 2 }, { sel: '.ws.active .dev-tab', n: 0 }, { lado: 'antes' });
     afirma(r.iniciou && r.dragstarts === 1, `o arraste da aba do editor começa (dragstart ${r.dragstarts})`);
     afirma(igual(await abasEditor(app), ['c.txt', 'a.txt', 'b.txt']), `c arrastada para antes de a: ${(await abasEditor(app)).join(', ')}`);
     afirma((await ativaEditor(app)) === 'a.txt', 'a aba ativa continua a.txt (guardada por caminho)');
     afirma((await restos(app)) === 0, 'nenhuma classe .dragging/.drop-* sobra');
-    const gravado = await esperaConfig(sb, w => igual(w.list[0].groups[0]?.tabs.map(base), ['c.txt', 'a.txt', 'b.txt']));
+    const gravado = await esperaConfig(sb, w => igual(w.list[0].groups[0]?.tabs.map(base), ['c.txt', 'a.txt', 'b.txt']), 3000); // logo após o arraste, sem outra ação no meio
     afirma(!!gravado && base(gravado.list[0].groups[0].active) === 'a.txt', `a ordem foi gravada em groups[].tabs (${gravado ? gravado.list[0].groups[0].tabs.map(base).join(', ') : 'não gravou'})`);
 
     // sem renomear: duplo clique no nome não abre input
@@ -703,6 +727,55 @@ CENARIOS.teclado = async () => {
     await esperaConfig(sb, w => igual(w.list.map(x => x.name), ['p2', 'p3', 'p1']));
     const app2 = await app.reiniciar();
     afirma(igual(await nomesProjetos(app2), ['p2', 'p3', 'p1']) && (await ativoDosProjetos(app2)) === 'p1', `teclado + reabrir: ${await nomesDe(app2)}, ativo ${await ativoDosProjetos(app2)}`);
+  });
+};
+
+// Enter e Espaço ativam a aba focada nas três barras (como o clique); botão direito e do meio na aba do terminal focam o
+// terminal (como na main); a aba do editor focada continua focada quando renderTabs refaz a barra (R-b)
+CENARIOS.ativar = async () => {
+  await comApp({ projetos: ['p1', 'p2', 'p3'], ativo: 1, grupos: { p2: [{ tabs: ['@a.txt', '@b.txt', '@c.txt'], active: '@a.txt' }] } }, async app => {
+    await app.espera(`document.querySelectorAll('.ws.active .dev-tab').length === 3`, 40000, 'abas do editor');
+    await novoTerminal(app); await novoTerminal(app);
+    for (const n of [0, 1]) await dispensaPainel(app, n);
+    const espaco = a => tecla(a, ' ', 'Space', 32);
+
+    // editor
+    await foca(app, '.ws.active .dev-tab', 1);
+    await tecla(app, 'Enter', 'Enter', 13);
+    afirma((await ativaEditor(app)) === 'b.txt', 'editor: Enter na aba focada (b.txt) a ativa');
+    await foca(app, '.ws.active .dev-tab', 2);
+    await espaco(app);
+    afirma((await ativaEditor(app)) === 'c.txt', 'editor: Espaço na aba focada (c.txt) a ativa');
+
+    // terminais (o foco vai ao terminal, como no clique)
+    await foca(app, '.ws.active .term-tab', 1);
+    await tecla(app, 'Enter', 'Enter', 13);
+    afirma(await focoNoPane(app, 1), 'terminais: Enter na aba focada leva o foco ao terminal dela');
+    await foca(app, '.ws.active .term-tab', 0);
+    await espaco(app);
+    afirma(await focoNoPane(app, 0), 'terminais: Espaço na aba focada leva o foco ao terminal dela');
+
+    // botão do meio e botão direito na aba do terminal focam o terminal (comportamento da main)
+    await foca(app, '.ws.active .dev-tab', 0);
+    await cliqueReal(app, '.ws.active .term-tab .term-pane-name', 1, { botao: 'middle' });
+    afirma(await focoNoPane(app, 1), 'terminais: o botão do meio na aba foca o terminal');
+    await foca(app, '.ws.active .dev-tab', 0);
+    await cliqueReal(app, '.ws.active .term-tab .term-pane-name', 0, { botao: 'right' });
+    afirma(await focoNoPane(app, 0), 'terminais: o botão direito na aba foca o terminal');
+
+    // (R-b) renderTabs com uma aba do editor focada devolve o foco à mesma aba
+    await foca(app, '.ws.active .dev-tab', 1);
+    await app.ev(`(() => { const m = monaco.editor.getModels().find(x => x.uri.path.endsWith('b.txt')); m.applyEdits([{ range: { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 1 }, text: 'x' }]); return true; })()`);
+    await app.espera(`document.querySelectorAll('.ws.active .dev-tab')[1].classList.contains('dirty')`, 5000, 'aba b.txt suja (renderTabs rodou)');
+    afirma(await ativoEh(app, `a.classList.contains('dev-tab') && a.querySelector('.dev-tab-name').textContent === 'b.txt'`), '(R-b) a edição refez a barra e o foco continuou na mesma aba do editor (b.txt)');
+
+    // projetos (por último: ativar outro projeto troca o .ws ativo)
+    await foca(app, '#ws-tabs .ws-tab', 2);
+    await tecla(app, 'Enter', 'Enter', 13);
+    afirma((await ativoDosProjetos(app)) === 'p3', 'projetos: Enter na aba focada (p3) a ativa');
+    await foca(app, '#ws-tabs .ws-tab', 0);
+    await espaco(app);
+    afirma((await ativoDosProjetos(app)) === 'p1', 'projetos: Espaço na aba focada (p1) a ativa');
   });
 };
 

@@ -142,7 +142,7 @@ async function abrir(sb) {
     try { if (WIN) execFileSync('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { stdio: 'ignore' }); else proc.kill(); } catch { /* já encerrou */ }
     await sleep(1500);
   };
-  await app.espera(`!!document.querySelector('.ws.active')`, 40000, 'workspace ativo');
+  await app.espera(`!!document.querySelector('.ws.active') && !!window.RendraComandos`, 40000, 'workspace ativo e página Comandos carregada');
   return app;
 }
 
