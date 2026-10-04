@@ -2,7 +2,7 @@
 
 ## Próxima versão
 ### Conversas do terminal
-- "Nova conversa no Claude" agora sempre abre uma conversa nova: a IDE escreve `claude --session-id` com um identificador novo a cada clique. Antes, no WSL, um `claude` sem argumentos podia cair numa sessão tmux já aberta (função no `.bashrc`) em vez de iniciar do zero.
+- "Nova conversa no Claude" agora sempre abre uma conversa nova: a IDE escreve `claude --session-id` com um identificador novo, gerado por ela a cada clique (não lido de fora). Antes, no WSL, um `claude` sem argumentos podia cair numa sessão tmux já aberta (função no `.bashrc`) em vez de iniciar do zero.
 
 ## 1.7.0 · 03/10/2026
 ### Abas
