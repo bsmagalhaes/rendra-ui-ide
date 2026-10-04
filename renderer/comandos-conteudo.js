@@ -159,7 +159,10 @@
       { id: 'atualizar', titulo: 'Atualizar o consumo', teclas: [k(c, 'R')], oQueFaz: 'Atualiza os números de consumo. Nas páginas IDE e Terminal esse atalho vai para o programa.' },
       { id: 'abrir-link', titulo: 'Abrir link do terminal', teclas: [k(c, 'Clique')], oQueFaz: 'Abre o link direto. O clique simples pede uma confirmação antes.' },
       { id: 'renomear', titulo: 'Renomear', teclas: [k('Duplo clique')], oQueFaz: 'Duplo clique no nome de um terminal ou de um workspace para renomear.' },
-      { id: 'reordenar', titulo: 'Reordenar terminais', teclas: [k('Arrastar a aba')], oQueFaz: 'Arraste a aba de um terminal sobre outra para trocar a ordem.' },
+      {
+        id: 'reordenar', titulo: 'Reordenar abas', teclas: [k('Arrastar a aba'), k(mac ? 'Control' : 'Ctrl', 'Shift', 'Seta esquerda'), k(mac ? 'Control' : 'Ctrl', 'Shift', 'Seta direita')],
+        oQueFaz: 'Arraste a aba de um projeto, de um terminal ou de um arquivo do editor sobre outra da mesma barra para trocar a ordem. Com o foco numa aba (tecla Tab), o atalho a move um passo. Dentro do terminal e do editor o Ctrl+Shift+Seta continua marcando por palavra.',
+      },
       { id: 'esc', titulo: 'Fechar ou cancelar', teclas: [k('Esc')], oQueFaz: 'Fecha menus e cancela a renomeação.' },
       { id: 'enter', titulo: 'Confirmar', teclas: [k('Enter')], oQueFaz: 'Confirma a janela aberta ou a renomeação.' },
     ];

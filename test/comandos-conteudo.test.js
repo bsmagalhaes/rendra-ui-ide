@@ -100,6 +100,19 @@ test('novo terminal e troca de aba por sistema', () => {
   }
 });
 
+test('reordenar abas: arrastar e Ctrl+Shift+Seta esquerda ou direita, por sistema, para projetos, terminais e editor', () => {
+  for (const { sistema, c } of todas) {
+    const item = c.blocos.find(b => b.id === 'ide').itens.find(i => i.id === 'reordenar');
+    const ctrl = sistema === 'macos' ? 'Control' : 'Ctrl';
+    assert.strictEqual(item.titulo, 'Reordenar abas');
+    assert.deepStrictEqual(item.teclas.map(t => C.rotulo([t])), ['Arrastar a aba', `${ctrl}+Shift+Seta esquerda`, `${ctrl}+Shift+Seta direita`]);
+    assert.match(item.oQueFaz, /projeto, de um terminal ou de um arquivo do editor/);
+    assert.match(item.oQueFaz, /marcando por palavra/);
+  }
+  const renomear = C.conteudo({ sistema: 'windows', agente: 'claude' }).blocos.find(b => b.id === 'ide').itens.find(i => i.id === 'renomear');
+  assert.match(renomear.oQueFaz, /terminal ou de um workspace/, 'o editor não renomeia: o item de renomear continua só para terminais e projetos');
+});
+
 test('a lista traz os atalhos antigos da IDE (F40 a F42) e nada além', () => {
   const ids = C.conteudo({ sistema: 'windows', agente: 'claude' }).blocos.find(b => b.id === 'ide').itens.map(i => i.id);
   assert.deepStrictEqual(ids, ['novo-terminal', 'abrir-pasta', 'proxima-aba', 'aba-anterior', 'salvar', 'fechar-aba', 'dividir', 'atualizar', 'abrir-link', 'renomear', 'reordenar', 'esc', 'enter']);

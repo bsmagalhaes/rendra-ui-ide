@@ -1,5 +1,13 @@
 # Novidades
 
+## Próxima versão
+### Abas
+- Arrastar as abas de terminais não funcionava e foi corrigido: arraste uma aba sobre outra e os terminais trocam de lugar, na grade também.
+- As abas de projetos e as abas de arquivos do editor agora também se reordenam arrastando. A ordem dos projetos e das abas do editor é salva e volta quando você reabre o app. As abas do editor só trocam de lugar dentro do próprio quadro, e continuam sem renomear.
+- O mesmo indicador aparece nas três barras: uma linha laranja marca onde a aba vai cair.
+- Pelo teclado: com o foco numa aba, Ctrl+Shift+Seta esquerda ou direita move a aba um passo (o Ctrl+Shift+Seta continua marcando por palavra dentro do terminal e do editor). As abas das três barras agora são alcançadas com a tecla Tab, e a nova posição é anunciada para leitores de tela.
+- A página Comandos lista o arraste e o atalho em "Reordenar abas".
+
 ## 1.6.0 · 03/10/2026
 ### Terminal
 - O Ctrl+V voltava a não colar (nem texto nem imagem). Foi corrigido.

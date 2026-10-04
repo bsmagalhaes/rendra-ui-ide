@@ -718,11 +718,14 @@ caso('T12', async app => {
   afirma(await kbds('colar-texto') === 'Ctrl+V | Ctrl+Shift+V | Clique direito', `Windows: colar texto = ${await kbds('colar-texto')}`);
   afirma(await kbds('colar-imagem') === 'Alt+V', `Windows com Claude Code: colar imagem = ${await kbds('colar-imagem')}`);
   afirma(await kbds('novo-terminal') === 'Ctrl+Shift+T' && await kbds('abrir-pasta') === 'Ctrl+O', 'Windows: novo terminal Ctrl+Shift+T e abrir pasta Ctrl+O');
+  afirma(await kbds('reordenar') === 'Arrastar a aba | Ctrl+Shift+Seta esquerda | Ctrl+Shift+Seta direita', `Windows: reordenar abas = ${await kbds('reordenar')}`);
+  afirma(await app.ev(`/Reordenar abas/.test(document.querySelector('.cmd-card[data-id="reordenar"]').textContent) && /projeto, de um terminal ou de um arquivo do editor/.test(document.getElementById('comandos-body').textContent)`), 'Windows: o card Reordenar abas cita projetos, terminais e arquivos do editor');
   afirma(await app.ev(`document.getElementById('comandos-body').textContent.includes('WSL')`), 'Windows: a nota do terminal WSL aparece');
   await fotografa(app, 'comandos-windows-claude');
   await troca('sistema', 'macos');
   afirma(await kbds('colar-texto') === 'Cmd+V | Clique direito' && await kbds('interromper') === 'Control+C', `macOS: colar texto = ${await kbds('colar-texto')}, interromper = ${await kbds('interromper')}`);
   afirma(await kbds('novo-terminal') === 'Cmd+Shift+T' && await kbds('proxima-aba') === 'Control+Tab' && await kbds('abrir-pasta') === 'Cmd+O', 'macOS: Cmd+Shift+T, Control+Tab e Cmd+O');
+  afirma(await kbds('reordenar') === 'Arrastar a aba | Control+Shift+Seta esquerda | Control+Shift+Seta direita', `macOS: reordenar abas = ${await kbds('reordenar')}`);
   afirma(!(await app.ev(`document.getElementById('comandos-body').textContent.includes('WSL')`)), 'macOS: sem a nota do WSL');
   await fotografa(app, 'comandos-macos-claude');
   await troca('sistema', 'linux');

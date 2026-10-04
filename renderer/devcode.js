@@ -3,7 +3,7 @@
 //
 // Several workspaces live side by side as tabs (rename with double-click). Each one has:
 //   left:   folder explorer (lazy tree)
-//   middle: terminals in a 1–4 column grid, reorderable with ◀ ▶
+//   middle: terminals in a 1–4 column grid, reorderable by dragging the tabs (or Ctrl+Shift+←/→ on a focused tab)
 //   right:  Monaco editor groups with tabs, shown once a file is opened (Ctrl+\ splits)
 // Closing a tab, a workspace or the app with unsaved files asks Salvar / Não salvar / Cancelar.
 // All file and process access goes through window.rendra.dev (main process).
