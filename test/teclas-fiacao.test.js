@@ -76,8 +76,10 @@ test('painel de conversas aberto: nenhuma escrita direta nova (colar, Alt+V, Ctr
   assert.strictEqual((colarFn.match(/if \(!podeEscrever\(\)\) return;/g) || []).length, 2);
   assert.match(trecho(handler, "case 'colar-imagem':", "case 'copiar-selecao':"), /if \(podeEscrever\(\)\) dev\.ptyWrite\(t\.id, a\.bytes\)/);
   assert.match(handler, /if \(!t\.painel\) t\.ctrlC\.tocar\(\);/);
-  const aba = trecho(devcode, "tab.addEventListener('mousedown'", '    });');
+  // o foco vai no `click`: um mousedown com preventDefault impede o arraste nativo da aba (os terminais não reordenavam)
+  const aba = trecho(devcode, "tab.addEventListener('click'", '    });');
   assert.match(aba, /if \(t\.painel\) t\.painel\.el\.querySelector\('button'\)\?\.focus\(\); else term\.focus\(\);/);
+  assert.ok(!devcode.includes("tab.addEventListener('mousedown'"), 'a aba do terminal não escuta o mousedown (o preventDefault bloqueia o arraste)');
 });
 
 test('o temporizador do Ctrl+C morre com o terminal: cancelar ao fechar e ao encerrar o processo', () => {
