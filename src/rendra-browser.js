@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 /*! Rendra IDE | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Rendra Browser: janela própria e ISOLADA para ver uma página. A página roda sem preload, sem Node, em sandbox, numa
 // sessão própria que não persiste, sem acesso ao IPC da IDE. Só http(s); permissões e downloads negados.

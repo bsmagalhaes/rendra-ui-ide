@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // RTK: instalar e atualizar o binário por ambiente (host ou distro WSL), sempre >= RTK_MIN.
 // O host usa setup.installRtk; a distro recebe o binário do asset certo para a arquitetura dela,
 // gravado por UNC em arquivo temporário e posto no lugar por `mv` dentro da distro.

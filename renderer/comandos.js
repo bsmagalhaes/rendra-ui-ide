@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Página "Comandos": atalhos do terminal, comandos do Claude Code e do Codex e atalhos da IDE, por sistema e por agente.
 // O conteúdo vem de renderer/comandos-conteudo.js (puro e testado); aqui só ficam o desenho e os dois seletores.
 

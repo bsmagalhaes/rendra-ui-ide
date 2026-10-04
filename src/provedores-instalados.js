@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Quais provedores (Claude Code, Codex) estão instalados no ambiente do terminal: "instalado" é o binário
 // responder `--version` com saída 0, nunca a pasta .claude/.codex e nunca `command -v` (o shim do Codex na
 // distro resolve no PATH e não roda). Nada é montado com dado externo: os nomes e os argumentos são literais,

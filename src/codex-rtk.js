@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Estado do Codex para a página do RTK: o Codex pode estar instalado no Windows e/ou dentro de uma
 // distro WSL (onde o terminal WSL o roda). As pastas das distros vêm de src/wsl-roots.js: cada
 // `<home>/.codex/sessions` descoberto lá aponta para o `<home>/.codex` da distro.

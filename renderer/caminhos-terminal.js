@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Reconhecedor de caminhos de arquivo no texto do terminal. Só devolve CANDIDATOS (texto que parece um
 // caminho); quem decide se vira link é a verificação de existência no main. Puro, sem DOM: carregado no
 // renderer (window.RendraCaminhos) e nos testes (require). Não valida palavra por palavra: só entra

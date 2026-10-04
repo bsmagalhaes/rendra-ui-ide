@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Decide de onde o app se atualiza. Função pura, para ter teste (main.js só aplica o resultado).
 //   git     clone com `git clone` + `npm install` (src/git-updater.js)
 //   updater instalador (NSIS, AppImage, deb, zip do mac) pelo electron-updater e o GitHub Releases

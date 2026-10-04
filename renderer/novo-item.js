@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Nome de arquivo ou pasta novo, criado pelo menu do explorador. Carregado no renderer
 // (window.RendraNovoItem), no processo principal e nos testes (require): a mesma regra vale na
 // tela, que mostra a mensagem, e no IPC, que é quem protege o disco.

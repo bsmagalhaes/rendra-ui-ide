@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Onde os agentes gravam as sessões depende do sistema do TERMINAL, não do da IDE: quem abre o
 // terminal WSL no Windows roda o Claude Code e o Codex dentro da distro, e os arquivos ficam em
 // /home/<usuário>/.claude/projects e /home/<usuário>/.codex/sessions. Daqui o Windows os alcança

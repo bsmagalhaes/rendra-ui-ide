@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Conversas do Codex de uma pasta, para o seletor do terminal novo. Percorre
 // sessions/AAAA/MM/DD/rollout-<ISO>-<uuid>.jsonl do ambiente do terminal e lê só a primeira linha
 // (session_meta: id, cwd, timestamp), com tempo total limitado e cache em memória por caminho+mtime+tamanho

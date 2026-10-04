@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Modal de Novidades, aberto na primeira abertura depois de atualizar o app. Carregado no renderer
 // (window.RendraNovidades) e nos testes (require). As regras são puras; abrir() mexe no DOM.
 //

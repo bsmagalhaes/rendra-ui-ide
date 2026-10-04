@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Reordenar abas (projetos, terminais e editor). Módulo puro, carregado no renderer (window.RendraReordenar) e nos
 // testes (require). Não toca no DOM: devcode.js guarda o estado e chama estas funções.
 (function (root) {

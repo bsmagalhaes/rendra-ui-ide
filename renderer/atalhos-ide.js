@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Atalhos de teclado da IDE (novo terminal, abrir pasta, trocar de aba do editor). Módulo puro, carregado no
 // renderer (window.RendraAtalhosIde) e nos testes (require). A escuta e as ações ficam em devcode.js.
 //

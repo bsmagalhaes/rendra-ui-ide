@@ -1,6 +1,6 @@
 # Novidades
 
-## Próxima versão
+## 1.7.1 · 04/10/2026
 ### Terminal e editor
 - No Windows, a roda do mouse agora rola o número de linhas que você configurou em "Linhas por vez" nas configurações de mouse do sistema. Antes, o terminal rolava só 3 linhas e o editor cerca de 3 por entalhe, qualquer que fosse a configuração. Vale para o histórico do terminal, para programas em tela cheia (less, vim, Claude Code, Codex) e para o editor. Com Alt a rolagem fica 5 vezes mais rápida. Mac e Linux continuam como antes. Limitação conhecida: roda de alta resolução e trackpad (que mandam passos menores que um entalhe) seguem o comportamento antigo.
 ### Conversas do terminal

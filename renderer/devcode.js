@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // DevCode tab — a small VS Code-like workspace manager.
 //
 // Several workspaces live side by side as tabs (rename with double-click). Each one has:
