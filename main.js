@@ -424,12 +424,8 @@ function initAutoUpdate() {
   setInterval(check, 6 * 60 * 60 * 1000);
   ipcMain.removeHandler('update:install');
   // O NSIS encerra a IDE cerca de 1,3 s depois de abrir: os terminais morrem antes de chamar o instalador
-  ipcMain.handle('update:install', async () => {
-    // a guarda de arquivos não salvos vem ANTES de matar os terminais: quem cancela não perde nada
-    if (!(await devcode.confirmarSaidaDaIde())) return { ok: false, cancelado: true };
-    await devcode.killAll({ tetoMs: 8000 }).catch(() => { /* idem */ });
-    return autoUpdater.quitAndInstall();
-  }); // the unsaved-files guard still asks
+  // guarda de arquivos não salvos antes de matar os terminais; só então o instalador (src/devcode.js)
+  ipcMain.handle('update:install', () => devcode.atualizarEInstalar(() => autoUpdater.quitAndInstall())); // the unsaved-files guard still asks
 }
 ipcMain.handle('update:status', () => updateState);
 ipcMain.handle('update:check', () => updateSource === 'git' || updateSource === 'none' ? gitUpdater.check() : updateState);

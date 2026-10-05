@@ -223,3 +223,56 @@ test('a foto da árvore tirada em prepararSaida (before-quit) é reaproveitada n
   lixo.prepararSaida();
   assert.strictEqual(fotos, 2);
 });
+
+// ── atualização pelo instalador (correção 8 do parecer) ─────────────────────
+function montarAtualizacao({ resposta, sujos = [], instalar, rearmeGuardaMs }) {
+  const sb = F.sandbox();
+  const handlers = new Map(), once = new Map(), estado = { lancados: [] };
+  const ipcMain = { handle: (n, fn) => handlers.set(n, fn), on() {}, once: (n, fn) => once.set(n, fn), removeAllListeners() {}, removeHandler() {} };
+  let fechar = null;
+  const win = { isDestroyed: () => false, on: (ev, fn) => { if (ev === 'close') fechar = fn; }, close() {}, webContents: { send: canal => { if (canal === 'app:query-dirty') setImmediate(() => once.get('app:query-dirty:reply')?.({}, sujos)); } } };
+  const dev = registerDevCode({
+    ipcMain, dialog: { showMessageBox: async () => ({ response: resposta }) }, store: { get: (k, d) => d, set() {}, delete() {} }, getWindow: () => win,
+    deps: { listWslDistros: async () => [], loadPty: () => ptyDeArvore(sb, estado), wakeWslDistro: async () => true, env: {}, prazos: { agente: 300, terminal: 300, saida: 5000 }, rearmeGuardaMs },
+  });
+  dev.guardWindowClose(win);
+  return { sb, dev, estado, handlers, instalar, disparaFechar: () => { let impediu = false; return Promise.resolve(fechar({ preventDefault() { impediu = true; } })).then(() => impediu); },
+    async abre() { const r = await handlers.get('pty:create')({}, { cols: 80, rows: 24 }); assert.ok(r.id); const l = estado.lancados[0]; assert.ok(await F.esperar(() => fs.existsSync(l.out), 15000)); await new Promise(x => setTimeout(x, 150)); const n = JSON.parse(fs.readFileSync(l.out, 'utf8')); F.adotar(n.teimoso); F.adotar(n.comum); return { pai: l.filho.pid, ...n }; } };
+}
+
+test('atualizar: o instalador só é chamado depois que os terminais morreram (conferido pelo SO)', async () => {
+  const t = montarAtualizacao({ resposta: 1 });
+  try {
+    const n = await t.abre();
+    let vivosNaChamada = null;
+    const r = await t.dev.atualizarEInstalar(async () => { vivosNaChamada = [n.pai, n.teimoso, n.comum].filter(F.vivo); return 'instalou'; });
+    assert.strictEqual(r, 'instalou');
+    assert.deepStrictEqual(vivosNaChamada, [], 'quitAndInstall falso viu o shell e os netos já mortos');
+  } finally { t.sb.limpa(); }
+});
+
+test('atualizar: cancelar a guarda de arquivos não salvos não mata nada e não chama o instalador', async () => {
+  const t = montarAtualizacao({ resposta: 2, sujos: ['a.txt'] });
+  try {
+    const n = await t.abre();
+    let chamou = false;
+    const r = await t.dev.atualizarEInstalar(async () => { chamou = true; });
+    assert.deepStrictEqual(r, { ok: false, cancelado: true });
+    assert.strictEqual(chamou, false);
+    assert.ok([n.pai, n.teimoso, n.comum].every(F.vivo), 'terminais intactos');
+    await t.dev.killAll();
+  } finally { t.sb.limpa(); }
+});
+
+test('atualizar: se o instalador erra ou não encerra a IDE, a guarda volta a valer ao fechar a janela', async () => {
+  const erra = montarAtualizacao({ resposta: 1 });
+  const demora = montarAtualizacao({ resposta: 1, rearmeGuardaMs: 80 });
+  try {
+    await assert.rejects(erra.dev.atualizarEInstalar(async () => { throw new Error('instalador falhou'); }), /instalador falhou/);
+    assert.strictEqual(await erra.disparaFechar(), true, 'a janela volta a perguntar (preventDefault)');
+    await demora.dev.atualizarEInstalar(async () => 'ok');
+    assert.strictEqual(await demora.disparaFechar(), false, 'logo depois, a guarda já foi confirmada: fecha direto');
+    await new Promise(x => setTimeout(x, 200));
+    assert.strictEqual(await demora.disparaFechar(), true, 'a IDE não saiu: passado o prazo a guarda é rearmada');
+  } finally { erra.sb.limpa(); demora.sb.limpa(); }
+});

@@ -14,7 +14,6 @@
 
 const { execFile } = require('child_process');
 const A = require('./agentes-proc');
-const agentes = () => A;
 
 // prazos (ms); os testes trocam por injeção
 // `saida` era 3000: no Windows a foto da árvore (PowerShell + CIM) leva 1 a 1,4 s e o prazo gracioso mais 1 s, medido
@@ -230,7 +229,7 @@ async function encerrarAgentes({ amb, alvos, prazoMs = PRAZOS.agente, execFileFn
   // Windows: reconfere a hora de criação NA HORA do sinal (o PID pode ter sido reaproveitado desde a leitura)
   let alvosOk = lista;
   if (process.platform === 'win32' || deps.listarPids) {
-    const listarPids = deps.listarPids || (pids => agentes().listarProcessosWindows({ filtro: pids.map(p => `ProcessId=${p}`).join(' OR '), timeout: 6000 }));
+    const listarPids = deps.listarPids || (pids => A.listarProcessosWindows({ filtro: pids.map(p => `ProcessId=${p}`).join(' OR '), timeout: 6000 }));
     const agora = (await Promise.resolve(listarPids(lista.map(a => a.pid))).catch(() => null)) || [];
     const porPid = new Map(agora.map(p => [p.pid, p]));
     alvosOk = lista.filter(a => { const p = porPid.get(a.pid); return p && (a.inicio == null || p.inicio == null || String(p.inicio) === String(a.inicio)); });

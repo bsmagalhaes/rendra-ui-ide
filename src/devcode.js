@@ -706,7 +706,23 @@ function registerDevCode({ ipcMain, dialog, store, getWindow, userData, deps = {
 
   const confirmarSaidaDaIde = async () => { const w = getWindow(); if (!w || w.isDestroyed()) return true; const ok = await confirmarSaida(w); if (ok) guardaJaConfirmada = true; return ok; };
 
-  return { killAll, guardWindowClose, confirmarSaidaDaIde, varrerAoAbrir, prepararSaida: () => ciclo.prepararSaida() };
+  // Atualização pelo instalador: guarda de arquivos não salvos, depois os terminais morrem, depois o instalador.
+  // Se a saída não acontece (instalador erra ou não encerra a IDE), a guarda volta a valer na próxima vez que a janela fechar.
+  const atualizarEInstalar = async instalar => {
+    if (!(await confirmarSaidaDaIde())) return { ok: false, cancelado: true };
+    await killAll({ tetoMs: 8000 }).catch(() => { /* a varredura da próxima abertura cobre o que sobrar */ });
+    try {
+      const r = await instalar();
+      const t = setTimeout(() => { guardaJaConfirmada = false; }, deps.rearmeGuardaMs ?? 20000);
+      if (t.unref) t.unref();
+      return r;
+    } catch (e) {
+      guardaJaConfirmada = false;
+      throw e;
+    }
+  };
+
+  return { killAll, guardWindowClose, confirmarSaidaDaIde, atualizarEInstalar, varrerAoAbrir, prepararSaida: () => ciclo.prepararSaida() };
 }
 
 module.exports = { registerDevCode, toWslUnc, opcoesConpty };
