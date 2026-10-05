@@ -31,6 +31,7 @@ test('o script fica fora do asar no app instalado', () => {
   assert.ok(b.asarUnpack.includes('src/**'));
   const { caminhoAbridorUrl } = require('../src/terminal-env');
   assert.strictEqual(caminhoAbridorUrl('C:\\App\\resources\\app.asar\\src'), 'C:\\App\\resources\\app.asar.unpacked\\src\\wsl-abrir-url.sh');
+  assert.strictEqual(caminhoAbridorUrl('/opt/app/resources/app.asar/src'), '/opt/app/resources/app.asar.unpacked/src/wsl-abrir-url.sh');
 });
 
 const URL_ESPACO = 'https://exemplo.com/a b?x=1&y=2 3,%41';

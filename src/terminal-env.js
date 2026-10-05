@@ -22,7 +22,8 @@ function urlWebSegura(valor) {
 // Nada é instalado na distro, e um BROWSER que o usuário já definiu continua valendo.
 const path = require('path');
 function caminhoAbridorUrl(dir = __dirname) {
-  return path.join(dir.replace(/app\.asar(?=[\\/]|$)/, 'app.asar.unpacked'), 'wsl-abrir-url.sh');
+  const p = /^[A-Za-z]:|\\/.test(dir) ? path.win32 : path.posix; // caminho do Windows em qualquer plataforma
+  return p.join(dir.replace(/app\.asar(?=[\\/]|$)/, 'app.asar.unpacked'), 'wsl-abrir-url.sh');
 }
 
 // `marca`: token aleatório do terminal (RENDRA_TERM). Quem herda a marca nasceu daquele terminal, e é assim que a IDE
