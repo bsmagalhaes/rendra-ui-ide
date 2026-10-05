@@ -445,7 +445,12 @@ app.on('will-quit', e => {
   terminaisEncerrados = true;
   devcode.killAll().catch(() => { /* a varredura da próxima abertura cobre o que sobrar */ }).finally(() => {
     try { gitUpdater.onQuit(); } catch { /* o ajudante é opcional */ }
-    app.exit(0);
+    // Medido no Windows com 3 terminais ou mais: app.exit() deixava o processo preso e process.exit() caía no erro nativo
+    // 0xC0000409 do teardown do node-pty, que o Windows Error Reporting segura por dezenas de segundos. Os terminais já
+    // morreram e as janelas já fecharam; o `quit` é emitido à mão (o electron-updater instala nele) e o processo termina.
+    try { app.emit('quit', {}, 0); } catch { /* sem ouvintes */ }
+    if (process.platform === 'win32') { try { process.kill(process.pid); } catch { /* cai no exit */ } }
+    process.exit(0);
   });
 });
 ipcMain.handle('app:version', () => app.getVersion());

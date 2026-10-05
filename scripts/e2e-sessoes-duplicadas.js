@@ -542,6 +542,22 @@ async function sairSemTerminal() {
   finally { if (app) await app.fechar(); F.encerrarTodos(); sb.limpa(); }
 }
 
+// ── Cenário 10: sair com vários terminais abertos (sondagem de saída) ───────
+async function sairComTerminais() {
+  const n = +(process.env.E2E_N || 5);
+  console.log('\n[10] sair com ' + n + ' terminais abertos');
+  const sb = sandbox();
+  let app;
+  try {
+    app = await abrir(sb);
+    for (let i = 0; i < n; i++) { const t = await novoTerminal(app); await esperaPainel(app, t.sel); await app.ev(`${t.sel}.querySelector('[data-nova="terminal"]').click()`); }
+    const t0 = Date.now();
+    await sairDoApp(app, `${REQ}('electron').app.quit()`);
+    afirma(await F.esperar(() => app.saiu, 40000), `a IDE saiu (${Date.now() - t0} ms, código ${app.codigo})`);
+  } catch (e) { afirma(false, `cenário 10 abortou: ${e.stack || e.message}`); }
+  finally { if (app) await app.fechar(); F.encerrarTodos(); sb.limpa(); }
+}
+
 (async () => {
   const so = process.env.E2E_SO || '123456789';
   if (so.includes('1')) await trava();
@@ -553,6 +569,7 @@ async function sairSemTerminal() {
   if (so.includes('7')) await wslReal();
   if (so.includes('8')) await relato();
   if (so.includes('9')) await sairSemTerminal();
+  if (so.includes('A')) await sairComTerminais();
   F.encerrarTodos();
   console.log(falhas.length ? `\n✗ ${falhas.length} falha(s):\n  - ${falhas.join('\n  - ')}` : '\n✓ tudo certo');
   process.exit(falhas.length ? 1 : 0);
