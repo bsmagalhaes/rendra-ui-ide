@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // RTK: adaptador de ambiente. Um "ambiente" é o sistema onde um agente roda: o host da IDE
 // (Windows, Linux ou macOS) ou uma distro WSL em execução. Tudo o que o RTK precisa passa por
 // aqui: executar um programa, ler e gravar arquivo, achar o `rtk`. Nunca acorda distro parada.

@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Agentes (Claude Code, Codex) vivos no ambiente de um terminal: quem eles são e que conversa seguram.
 // Três partes: reconhecimento puro de um processo (nunca por substring), leitura de processos por ambiente
 // (Windows por CIM, Linux e WSL por /proc num único `sh`, Mac por `ps`) e a junção das duas.

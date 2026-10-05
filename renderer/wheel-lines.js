@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Roda do mouse no Windows: 1 entalhe rola as "linhas por vez" que o usuário configurou no sistema, no terminal e no
 // editor. O Chromium já entrega essa configuração em WheelEvent.deltaY (N linhas x 100/3 px), mas o xterm e o Monaco
 // leem o campo legado wheelDeltaY (fixo em 120) e a ignoram. Lógica pura (sem DOM), carregada no renderer

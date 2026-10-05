@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Environment setup: checks and installs the tools the DevCode tab builds on.
 //   Git (Git Bash on Windows) · RTK (token-saving CLI proxy for Claude Code) · WSL (Windows only)
 // Plain Node (no Electron), shared by the app's first-run setup and `npm run setup`.

@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Resolução dos caminhos que aparecem no terminal: do texto para os caminhos absolutos possíveis, na
 // ordem de tentativa. Puro (sem fs, sem Electron), testável no node. Quem confere existência e se o
 // caminho está dentro das pastas abertas é o main (src/devcode.js). Nada aqui monta texto para shell.

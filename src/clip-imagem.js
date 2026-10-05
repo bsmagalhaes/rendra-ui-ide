@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Detecta imagem na área de transferência pela API do Electron 44 (clipboard.read(), que devolve itens com
 // `types`). O clipboard.availableFormats() das versões antigas não existe mais e fazia o Ctrl+V do terminal
 // falhar. Nunca lança: erro de leitura vale como "sem imagem", e o terminal cola o texto.

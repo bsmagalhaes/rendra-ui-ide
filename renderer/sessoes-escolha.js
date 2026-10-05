@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Modelo puro do seletor de conversas do terminal (Claude Code e Codex): validação de id, comparação de
 // pasta, título curto, data, ordenação, opções de nova conversa, comandos fixos e detecção do prompt.
 // Carregado no renderer (window.RendraSessoesEscolha) e exigido no main e nos testes (require).

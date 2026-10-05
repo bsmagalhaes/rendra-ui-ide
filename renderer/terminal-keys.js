@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Teclas do terminal que a IDE trata antes do xterm.js. Carregado no renderer (window.RendraTermKeys)
 // e nos testes (require).
 //

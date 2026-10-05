@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Reads the official price pages and turns their tables into pricing entries.
 //   Claude: https://platform.claude.com/docs/pt-BR/about-claude/pricing  (USD per 1M tokens)
 //   Codex:  https://learn.chatgpt.com/docs/pricing                        (credits per 1M tokens)

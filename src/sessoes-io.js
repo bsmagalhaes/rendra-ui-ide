@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Leitura barata e limitada para o seletor de conversas (Claude Code e Codex): só o início ou o fim de um
 // arquivo, sempre assíncrona (um UNC de distro WSL pode travar) e com tempo total. Nada daqui lança.
 

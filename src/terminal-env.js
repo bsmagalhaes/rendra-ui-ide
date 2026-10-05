@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Ambiente do pty e abertura de links do terminal. Puro (sem Electron), testável no node.
 
 // Só http e https saem do terminal para o navegador do sistema. Qualquer outro esquema (file:,

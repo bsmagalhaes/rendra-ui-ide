@@ -1,6 +1,6 @@
 # Novidades
 
-## Próxima versão
+## 1.7.2 · 04/10/2026
 ### Login no terminal WSL
 - O `/login` do Claude Code no terminal WSL voltou a abrir o navegador padrão do Windows. Antes, a IDE mandava o link para o Explorer, que lia os `=` do endereço como separadores e abria uma pasta. Agora o terminal WSL usa um pequeno script da própria IDE, que entrega o link inteiro ao navegador. Nada é instalado na distro, e um `BROWSER` que você já definiu continua valendo. PowerShell e Git Bash não mudaram.
 

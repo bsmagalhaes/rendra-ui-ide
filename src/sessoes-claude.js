@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Conversas do Claude Code de uma pasta, para o seletor do terminal novo. Lê só o que a lista mostra:
 // `stat` de todos os <uuid>.jsonl da pasta do projeto, e os primeiros 16 KB dos mais recentes (os demais
 // só quando se pede "todas"). Nunca usa parseClaudeJsonl (lê o arquivo inteiro). Nada além de

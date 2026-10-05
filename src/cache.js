@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Incremental scan cache — tracks mtime of each JSONL file so we only re-parse changed files.
 // Uses electron-store so it persists across app launches.
 

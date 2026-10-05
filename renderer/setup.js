@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // "Configurar ambiente": checks Git Bash, RTK (+ its Claude Code hook) and WSL, and installs
 // what's missing on request. Opens by itself on first launch when something is missing, and
 // from Settings / the RTK tab at any time.

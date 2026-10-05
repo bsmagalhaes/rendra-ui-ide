@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Codex CLI (OpenAI) usage from its local session logs:
 //   ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl   (or $CODEX_HOME/sessions)
 // Each line is { timestamp, type, payload }. Usage arrives as

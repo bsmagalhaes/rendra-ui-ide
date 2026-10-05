@@ -1,6 +1,6 @@
 {
   "name": "@rendra-ui/ide",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "private": true,
   "description": "Rendra IDE: terminais, editor e painel de consumo de tokens do Claude Code e do Codex, com RTK para economizar tokens",
   "productName": "Rendra IDE",
