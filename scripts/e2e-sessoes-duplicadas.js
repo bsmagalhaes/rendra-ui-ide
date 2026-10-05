@@ -257,6 +257,9 @@ async function retomar() {
     const snap1 = await foto();
     afirma(emArvore(snap1, app.pid).has(donos[0].pid), 'e ele nasceu de um terminal da IDE');
     const pidT1 = donos[0].pid;
+    // shim claude.cmd no caminho real (pty, conhost, cmd.exe, conhost, node): o agente é da IDE, então a mensagem de "fora da IDE" não pode sair
+    await sleep(5500);
+    afirma(!/também está aberta por outro processo/.test(await textoTerm(app, t1.sel)), 'conversa só da IDE: o terminal NÃO avisa "aberta por outro processo fora da IDE"');
 
     // R2: o terminal 2 retoma a mesma conversa: o agente do terminal 1 é encerrado, o shell dele fica, e a razão aparece
     const t2 = await novoTerminal(app);

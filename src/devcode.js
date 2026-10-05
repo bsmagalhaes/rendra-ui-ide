@@ -655,11 +655,9 @@ function registerDevCode({ ipcMain, dialog, store, getWindow, userData, deps = {
     win.webContents.send(channel);
   });
 
-  function guardWindowClose(win) {
-    let allowClose = false;
-    win.on('close', async e => {
-      if (allowClose) return;
-      e.preventDefault();
+  // Pergunta o que há de não salvo e deixa escolher; resolve true quando pode sair (nada sujo, salvou ou "sem salvar")
+  async function confirmarSaida(win) {
+    {
       const dirty = await askRenderer('app:query-dirty', []);
       if (dirty.length) {
         const { response } = await dialog.showMessageBox(win, {
@@ -674,15 +672,26 @@ function registerDevCode({ ipcMain, dialog, store, getWindow, userData, deps = {
             : `Salvar as alterações em ${dirty.length} arquivos antes de sair?`,
           detail: dirty.length > 1 ? dirty.join('\n') : 'Sem salvar, as alterações serão perdidas.',
         });
-        if (response === 2) return;
+        if (response === 2) return false;
         if (response === 0) {
           const res = await askRenderer('app:save-all', { ok: false, error: 'O editor não respondeu' }, 15000);
           if (!res.ok) {
             dialog.showErrorBox('Não foi possível salvar', res.error || 'Erro ao salvar os arquivos');
-            return;
+            return false;
           }
         }
       }
+      return true;
+    }
+  }
+
+  let guardaJaConfirmada = false; // o atualizador já perguntou: a janela fecha sem perguntar de novo
+  function guardWindowClose(win) {
+    let allowClose = false;
+    win.on('close', async e => {
+      if (allowClose || guardaJaConfirmada) return;
+      e.preventDefault();
+      if (!(await confirmarSaida(win))) return;
       allowClose = true;
       win.close();
     });
@@ -695,7 +704,9 @@ function registerDevCode({ ipcMain, dialog, store, getWindow, userData, deps = {
     deps: { distroRodando: async distro => { const i = await wslInfo(); const d = i.distros.find(x => x.name.toLowerCase() === String(distro).toLowerCase()); return !!d && /^running$/i.test(d.state); } },
   }).catch(() => null);
 
-  return { killAll, guardWindowClose, varrerAoAbrir, prepararSaida: () => ciclo.prepararSaida() };
+  const confirmarSaidaDaIde = async () => { const w = getWindow(); if (!w || w.isDestroyed()) return true; const ok = await confirmarSaida(w); if (ok) guardaJaConfirmada = true; return ok; };
+
+  return { killAll, guardWindowClose, confirmarSaidaDaIde, varrerAoAbrir, prepararSaida: () => ciclo.prepararSaida() };
 }
 
 module.exports = { registerDevCode, toWslUnc, opcoesConpty };

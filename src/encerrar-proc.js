@@ -14,6 +14,7 @@
 
 const { execFile } = require('child_process');
 const A = require('./agentes-proc');
+const agentes = () => A;
 
 // prazos (ms); os testes trocam por injeção
 // `saida` era 3000: no Windows a foto da árvore (PowerShell + CIM) leva 1 a 1,4 s e o prazo gracioso mais 1 s, medido
@@ -78,20 +79,17 @@ async function encerrarArvoresWindows(entradas, { prazoMs = PRAZOS.terminal, dep
     return a.length ? a : [{ pid: e.pid, t: null }]; // sem foto: ao menos a raiz
   });
   const todos = arvores.flat();
-  // A segunda foto (hora de criação de quem está na árvore) é tirada JUNTO com o prazo gracioso, não depois dele: no Windows
-  // cada consulta custa mais de 1 s e a saída da IDE tem teto. Quem sobrar do prazo só é forçado se esteve nesta foto com a
-  // mesma hora de criação da primeira; quem não aparece nela (morreu e o PID foi reaproveitado) não é tocado.
-  const verificacao = Promise.resolve(listarPids(todos.map(n => n.pid))).catch(() => null);
   for (const e of lista) { try { e.kill?.(); } catch { /* já saiu */ } }
   await esperarMorte(todos.map(n => n.pid), prazoMs, vivoFn);
   const vivos = todos.filter(n => vivoFn(n.pid));
   const forcados = [];
   if (vivos.length) {
-    const agora = (await verificacao) || [];
+    // segunda foto NA HORA de forçar, só de quem sobrou: hora de criação diferente ou ausente = PID reaproveitado, não é tocado
+    const agora = (await Promise.resolve(listarPids(vivos.map(n => n.pid))).catch(() => null)) || [];
     const porPid = new Map(agora.map(p => [p.pid, p]));
     for (const n of vivos) {
       const p = porPid.get(n.pid);
-      if (!p) continue; // não estava vivo na segunda foto: não é o processo da primeira
+      if (!p) continue; // não aparece na segunda foto: não é o processo da primeira
       if (n.t != null && p.inicio != null && n.t !== p.inicio) continue; // PID reaproveitado: não é mais o nosso
       matar(n.pid); forcados.push(n.pid);
     }
@@ -229,8 +227,16 @@ async function encerrarAgentes({ amb, alvos, prazoMs = PRAZOS.agente, execFileFn
   }
   const matar = deps.matar || ((pid, sinal) => { try { process.kill(pid, sinal); return true; } catch { return false; } });
   const vivoFn = deps.vivo || vivo;
+  // Windows: reconfere a hora de criação NA HORA do sinal (o PID pode ter sido reaproveitado desde a leitura)
+  let alvosOk = lista;
+  if (process.platform === 'win32' || deps.listarPids) {
+    const listarPids = deps.listarPids || (pids => agentes().listarProcessosWindows({ filtro: pids.map(p => `ProcessId=${p}`).join(' OR '), timeout: 6000 }));
+    const agora = (await Promise.resolve(listarPids(lista.map(a => a.pid))).catch(() => null)) || [];
+    const porPid = new Map(agora.map(p => [p.pid, p]));
+    alvosOk = lista.filter(a => { const p = porPid.get(a.pid); return p && (a.inicio == null || p.inicio == null || String(p.inicio) === String(a.inicio)); });
+  }
   const sinalizados = [];
-  for (const a of lista) if (matar(a.pid, 'SIGTERM')) sinalizados.push(a.pid); // no Windows o SIGTERM do Node já termina o processo
+  for (const a of alvosOk) if (matar(a.pid, 'SIGTERM')) sinalizados.push(a.pid); // no Windows o SIGTERM do Node já termina o processo (sem sinal gracioso)
   if (!sinalizados.length) return { encerrados: [] };
   await esperarMorte(sinalizados, prazoMs, vivoFn);
   for (const pid of sinalizados) if (vivoFn(pid)) matar(pid, 'SIGKILL');

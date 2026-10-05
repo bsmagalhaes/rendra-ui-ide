@@ -328,7 +328,9 @@ async function detectarAgentes({ amb, env = process.env, listar = listarProcesso
   const sandbox = !!env.RENDRA_HOME;
   if (!amb) return null;
   if (sandbox && amb.tipo === 'wsl') return { agentes: [], snap: null, donosIde: new Set() }; // sandbox nunca alcança a distro real
-  const snap = await listar(amb, { env, filtroWindows: "Name='claude.exe' OR Name='node.exe' OR Name='codex.exe' OR Name='electron.exe'" });
+  // foto COMPLETA: a descendência do terminal passa por conhost, cmd.exe, bash, npx (o shim claude.cmd), que um filtro por nome
+  // de imagem cortaria; os agentes são filtrados depois, por reconhecer()
+  const snap = await listar(amb, { env });
   if (!snap) return null;
   let agentes = agentesDoInstantaneo(snap);
   if (sandbox) {

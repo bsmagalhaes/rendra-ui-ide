@@ -237,3 +237,23 @@ test('Windows: lê os metadados de sessão da pasta do home (só arquivos <pid>.
     assert.deepStrictEqual(A.parsearWindows(JSON.stringify({ p: 3, pp: 1, n: 'x', c: null, t: null })).map(p => p.pid), [3]); // um só processo vem como objeto
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('a descendência do terminal usa a foto completa: pty, conhost, cmd.exe, conhost, node (shim claude.cmd) é da IDE', async () => {
+  const procs = [
+    { pid: 100, ppid: 1, nome: 'electron.exe', args: ['electron.exe'], inicio: '1' },
+    { pid: 200, ppid: 100, nome: 'pwsh.exe', args: ['pwsh.exe'], inicio: '2' }, // o shell do pty
+    { pid: 201, ppid: 200, nome: 'conhost.exe', args: ['conhost.exe'], inicio: '3' },
+    { pid: 202, ppid: 201, nome: 'cmd.exe', args: ['cmd.exe', '/c', 'claude.cmd', '--resume', ID1], inicio: '4' },
+    { pid: 203, ppid: 202, nome: 'conhost.exe', args: ['conhost.exe'], inicio: '5' },
+    { pid: 204, ppid: 203, nome: 'node.exe', args: ['node.exe', 'C:/n/node_modules/@anthropic-ai/claude-code/cli.js', '--resume', ID1], inicio: '6' },
+    { pid: 300, ppid: 1, nome: 'node.exe', args: ['node.exe', 'C:/n/node_modules/@anthropic-ai/claude-code/cli.js', '--resume', ID1], inicio: '7' }, // de fora
+  ];
+  const filtros = [];
+  const listar = async (amb, op) => { filtros.push(op.filtroWindows); return { plataforma: 'win32', host: 'h', procs, sessoes: [] }; };
+  const r = await A.detectarAgentes({ amb: { tipo: 'windows' }, env: {}, listar, tokens: [], ptyPids: [200] });
+  assert.deepStrictEqual(filtros, [undefined], 'sem filtro por nome de imagem');
+  assert.ok(r.donosIde.has(204), 'o agente atrás do cmd.exe e do conhost é da IDE');
+  assert.ok(!r.donosIde.has(300), 'o de fora não é');
+  const donos = A.donosDaConversa(r.snap, { provedor: 'claude', id: ID1, tokens: [], ptyPids: [200] }).map(d => d.pid).sort();
+  assert.deepStrictEqual(donos, [204, 300]);
+});

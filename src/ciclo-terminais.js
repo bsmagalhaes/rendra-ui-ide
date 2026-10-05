@@ -101,7 +101,8 @@ function criarCiclo({ registro, env = process.env, plataforma = process.platform
       const porDistro = new Map();
       for (const t of linux) {
         if (t.ambiente === 'wsl' && sandbox) continue; // sandbox nunca alcança a distro real
-        if (t.ambiente === 'posix' && plataforma !== 'linux') { // Mac: sem /proc, o grupo do shell recebe SIGHUP e depois SIGKILL
+        if (t.ambiente === 'posix' && plataforma !== 'linux') { // Mac
+          if (!(t.pty.pid > 1)) { try { t.pty.kill(); } catch { /* já saiu */ } continue; } // nunca process.kill(-0): sinaliza o próprio grupo: sem /proc, o grupo do shell recebe SIGHUP e depois SIGKILL
           feitos.push((async () => {
             try { process.kill(-t.pty.pid, 'SIGHUP'); } catch { /* sem grupo */ }
             await E.esperarMorte([t.pty.pid], prazos.terminal);

@@ -424,7 +424,12 @@ function initAutoUpdate() {
   setInterval(check, 6 * 60 * 60 * 1000);
   ipcMain.removeHandler('update:install');
   // O NSIS encerra a IDE cerca de 1,3 s depois de abrir: os terminais morrem antes de chamar o instalador
-  ipcMain.handle('update:install', async () => { await devcode.killAll({ tetoMs: 8000 }).catch(() => { /* idem */ }); return autoUpdater.quitAndInstall(); }); // the unsaved-files guard still asks
+  ipcMain.handle('update:install', async () => {
+    // a guarda de arquivos não salvos vem ANTES de matar os terminais: quem cancela não perde nada
+    if (!(await devcode.confirmarSaidaDaIde())) return { ok: false, cancelado: true };
+    await devcode.killAll({ tetoMs: 8000 }).catch(() => { /* idem */ });
+    return autoUpdater.quitAndInstall();
+  }); // the unsaved-files guard still asks
 }
 ipcMain.handle('update:status', () => updateState);
 ipcMain.handle('update:check', () => updateSource === 'git' || updateSource === 'none' ? gitUpdater.check() : updateState);
@@ -434,10 +439,10 @@ ipcMain.handle('update:install', () => canInstall(updateSource)
   ? gitUpdater.install(() => { quitAfterClose = true; app.quit(); })
   : { ok: true, noop: true });
 // Fechar a IDE é como no VS Code: o que nasceu de um terminal dela morre junto, árvore inteira, e a saída espera isso
-// (teto de 3 s). Fica no will-quit, depois da guarda de arquivos não salvos: o Electron não espera promessa no
+// (teto de 5 s). Fica no will-quit, depois da guarda de arquivos não salvos: o Electron não espera promessa no
 // before-quit, e quem cancela a saída ali não pode perder os terminais. O ajudante de atualização roda por último.
 // Depois do preventDefault do will-quit o Electron ignora um novo app.quit() (a saída já está em andamento), então a
-// saída termina em app.exit(), que ainda emite o evento `quit` (o electron-updater instala nele).
+// saída emite `quit` à mão e termina o processo (ver abaixo).
 let terminaisEncerrados = false;
 app.on('will-quit', e => {
   if (terminaisEncerrados) return;
@@ -449,6 +454,8 @@ app.on('will-quit', e => {
     // 0xC0000409 do teardown do node-pty, que o Windows Error Reporting segura por dezenas de segundos. Os terminais já
     // morreram e as janelas já fecharam; o `quit` é emitido à mão (o electron-updater instala nele) e o processo termina.
     try { app.emit('quit', {}, 0); } catch { /* sem ouvintes */ }
+    try { if (tray) tray.destroy(); } catch { /* já destruída */ }
+    for (const w of BrowserWindow.getAllWindows()) { try { w.destroy(); } catch { /* já destruída */ } }
     if (process.platform === 'win32') { try { process.kill(process.pid); } catch { /* cai no exit */ } }
     process.exit(0);
   });

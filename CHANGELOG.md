@@ -8,6 +8,7 @@
 - Cada conversa vive em um terminal só. Retomar uma conversa que já está aberta em outro terminal encerra o agente do terminal anterior (o shell dele continua) e mostra nele "Conversa retomada em outro terminal". Vale o terminal mais recente.
 - Retomar uma conversa que um Claude de fora da IDE está usando (outro terminal, uma sessão tmux) encerra só esse agente, nunca o shell nem o tmux, e carrega a conversa escolhida sem abrir uma nova. Se um rc do shell reabrir o agente em seguida, a IDE avisa e não o persegue.
 - O seletor de conversas marca "em uso" as conversas que têm um agente vivo e explica, numa linha, que a sessão anterior será encerrada ao abrir.
+- Limites conhecidos: `codex resume --last` e `codex` sem argumento não têm detecção; no Windows o agente é encerrado sem sinal gracioso (o sistema não oferece); atualizar pelo instalador pergunta pelos arquivos não salvos antes de encerrar os terminais.
 - Ainda não validado em macOS e Linux, e no WSL só com árvores de teste. O Codex de fora da IDE nunca é encerrado (ele tem trava própria); dentro da IDE, a regra de uma conversa por terminal vale para `codex resume`.
 
 ## 1.7.1 · 04/10/2026

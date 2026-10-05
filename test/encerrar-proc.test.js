@@ -223,3 +223,13 @@ test('PID reaproveitado entre a leitura e o sinal: o início conferido no script
   assert.ok(chamadas[0].args.includes('1234:999') && !chamadas[0].args.some(a => /^1:1$/.test(a)), 'pid 1 e pid inválido nunca vão ao script');
   assert.match(chamadas[0].args.find(a => a.includes('kill -TERM')), /\[ "\$cur" = "\$st" \]/); // só sinaliza se o início confere
 });
+
+test('Windows: a hora de criação é reconferida na hora do sinal; PID reaproveitado não recebe SIGTERM', async () => {
+  const sinais = [];
+  const mortos = new Set();
+  const deps = { matar: (pid, s) => { sinais.push([pid, s]); return true; }, vivo: pid => !mortos.has(pid), listarPids: async () => [{ pid: 4001, inicio: '10' }, { pid: 4002, inicio: '99' }] };
+  const r = await E.encerrarAgentes({ amb: { tipo: 'windows' }, alvos: [{ pid: 4001, inicio: '10' }, { pid: 4002, inicio: '20' }, { pid: 4003, inicio: '30' }], prazoMs: 30, deps });
+  assert.ok(sinais.some(([p, s]) => p === 4001 && s === 'SIGTERM'));
+  assert.ok(!sinais.some(([p]) => p === 4002 || p === 4003), 'início diferente ou ausente: nenhum sinal');
+  assert.deepStrictEqual(r.encerrados, [4001]);
+});
