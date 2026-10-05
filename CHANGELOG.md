@@ -1,6 +1,9 @@
 # Novidades
 
 ## Próxima versão
+### Login no terminal WSL
+- O `/login` do Claude Code no terminal WSL voltou a abrir o navegador padrão do Windows. Antes, a IDE mandava o link para o Explorer, que lia os `=` do endereço como separadores e abria uma pasta. Agora o terminal WSL usa um pequeno script da própria IDE, que entrega o link inteiro ao navegador. Nada é instalado na distro, e um `BROWSER` que você já definiu continua valendo. PowerShell e Git Bash não mudaram.
+
 ### Fechar a IDE e conversas duplicadas
 - Fechar a IDE agora funciona como no VS Code: tudo que nasceu de um terminal dela é encerrado junto, árvore inteira (o shell, o que rodava nele e, no WSL, a sessão Linux do terminal). Isso vale para "Sair" na bandeja, janela fechada, atualização e queda da janela do app. Antes, só o processo raiz do terminal era fechado e agentes do Claude Code podiam ficar vivos em segundo plano. Quem sai da sessão por conta própria, como uma sessão tmux, continua vivo, como no VS Code.
 - Se a IDE for encerrada à força (instalador, queda), ao abrir de novo ela encerra o que sobrou dos terminais dela, e só isso. O registro fica em `terminais-vivos.json`, na pasta de dados do app.

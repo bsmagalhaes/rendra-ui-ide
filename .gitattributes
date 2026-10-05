@@ -1,0 +1,2 @@
+# O script do WSL precisa de LF: com CRLF o shebang quebra (o git do Windows converteria)
+src/*.sh text eol=lf

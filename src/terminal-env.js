@@ -14,11 +14,16 @@ function urlWebSegura(valor) {
 }
 
 // Programas no WSL abrem o navegador por xdg-open, $BROWSER ou wslview, que a distro costuma não
-// ter. No terminal WSL, o $BROWSER aponta para o explorer.exe do Windows (interop do WSL), que abre
-// a URL no navegador padrão do Windows. A URL chega como um único argumento (nunca por texto de
-// shell), e o WSLENV leva a variável para dentro da distro. Nada é instalado na distro, e um
-// BROWSER que o usuário já definiu (no Windows ou no perfil da distro) continua valendo.
-const BROWSER_NO_WSL = 'explorer.exe';
+// ter. No terminal WSL, o $BROWSER aponta para src/wsl-abrir-url.sh, um script da IDE que recebe a URL
+// como único argumento (o Claude Code faz execFile($BROWSER, [url])) e a entrega inteira ao navegador
+// padrão do Windows por rundll32 url.dll,FileProtocolHandler. O explorer.exe não serve: lê `=` e `,`
+// da linha de comando como separadores e abre uma pasta. O WSLENV leva a variável com /p, e o WSL
+// converte o caminho do Windows para /mnt/.... O script fica fora do asar (asarUnpack de src/**).
+// Nada é instalado na distro, e um BROWSER que o usuário já definiu continua valendo.
+const path = require('path');
+function caminhoAbridorUrl(dir = __dirname) {
+  return path.join(dir.replace(/app\.asar(?=[\\/]|$)/, 'app.asar.unpacked'), 'wsl-abrir-url.sh');
+}
 
 // `marca`: token aleatório do terminal (RENDRA_TERM). Quem herda a marca nasceu daquele terminal, e é assim que a IDE
 // encontra, ao fechar, a sessão Linux dele (src/encerrar-proc.js). No WSL ela atravessa pelo WSLENV.
@@ -27,10 +32,10 @@ const MARCA = /^[0-9a-f]{16,64}$/;
 function ambientePty(base, { wsl, marca } = {}) {
   const env = { ...base, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
   const achar = nome => Object.keys(env).find(k => k.toUpperCase() === nome);
-  const levar = nome => { // o WSLENV leva a variável do Windows para dentro da distro, como texto (/u)
+  const levar = (nome, modo = 'u') => { // o WSLENV leva a variável do Windows para dentro da distro: /u texto, /p caminho convertido
     const kWslenv = achar('WSLENV') || 'WSLENV';
     const atual = String(env[kWslenv] || '').split(':').filter(Boolean);
-    if (!atual.some(i => i.split('/')[0].toUpperCase() === nome)) atual.push(`${nome}/u`);
+    if (!atual.some(i => i.split('/')[0].toUpperCase() === nome)) atual.push(`${nome}/${modo}`);
     env[kWslenv] = atual.join(':');
   };
   if (typeof marca === 'string' && MARCA.test(marca)) {
@@ -39,9 +44,9 @@ function ambientePty(base, { wsl, marca } = {}) {
   }
   if (!wsl) return env;
   if (achar('BROWSER')) return env; // o usuário já escolheu
-  env.BROWSER = BROWSER_NO_WSL;
-  levar('BROWSER');
+  env.BROWSER = caminhoAbridorUrl();
+  levar('BROWSER', 'p');
   return env;
 }
 
-module.exports = { urlWebSegura, ambientePty };
+module.exports = { urlWebSegura, ambientePty, caminhoAbridorUrl };

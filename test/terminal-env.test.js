@@ -22,15 +22,16 @@ test('ambientePty: BROWSER e WSLENV só no WSL', () => {
   assert.strictEqual(lin.WSLENV, 'FOO/p');
   assert.strictEqual(lin.TERM, 'xterm-256color');
   const w = ambientePty(base, { wsl: true });
-  assert.strictEqual(w.BROWSER, 'explorer.exe');
-  assert.strictEqual(w.WSLENV, 'FOO/p:BROWSER/u');
-  assert.strictEqual(ambientePty({}, { wsl: true }).WSLENV, 'BROWSER/u');
+  assert.match(w.BROWSER, /wsl-abrir-url\.sh$/); // script da IDE de um argumento, nunca o explorer.exe
+  assert.ok(!/explorer/i.test(w.BROWSER));
+  assert.strictEqual(w.WSLENV, 'FOO/p:BROWSER/p'); // /p: o WSL converte o caminho do Windows para /mnt/...
+  assert.strictEqual(ambientePty({}, { wsl: true }).WSLENV, 'BROWSER/p');
 });
 
 test('ambientePty respeita BROWSER já definido e não duplica o WSLENV', () => {
   assert.strictEqual(ambientePty({ BROWSER: 'meu-navegador' }, { wsl: true }).BROWSER, 'meu-navegador');
   assert.strictEqual(ambientePty({ Browser: 'x' }, { wsl: true }).BROWSER, undefined);
-  assert.strictEqual(ambientePty({ WSLENV: 'BROWSER/u' }, { wsl: true }).WSLENV, 'BROWSER/u');
+  assert.strictEqual(ambientePty({ WSLENV: 'BROWSER/p' }, { wsl: true }).WSLENV, 'BROWSER/p');
 });
 
 function montar() {
@@ -52,8 +53,8 @@ test('pty:create no WSL leva BROWSER, e o terminal do Windows não', { skip: pro
     await t.criar({ shell: 'wsl:Ubuntu' });
     await t.criar({ shell: 'cmd' });
     assert.strictEqual(t.lancados[0].file, 'wsl.exe');
-    assert.strictEqual(t.lancados[0].env.BROWSER, 'explorer.exe');
-    assert.match(t.lancados[0].env.WSLENV, /(^|:)BROWSER\/u$/);
+    assert.match(t.lancados[0].env.BROWSER, /wsl-abrir-url\.sh$/);
+    assert.match(t.lancados[0].env.WSLENV, /(^|:)BROWSER\/p$/);
     assert.strictEqual(t.lancados[1].env.BROWSER, undefined);
     assert.strictEqual(t.lancados[1].env.WSLENV, undefined);
   } finally {
@@ -67,7 +68,7 @@ test('ambientePty: a marca RENDRA_TERM vai ao pty e, no WSL, atravessa pelo WSLE
   assert.strictEqual(ambientePty({}, { wsl: false, marca: tok }).RENDRA_TERM, tok);
   const w = ambientePty({ WSLENV: 'X/u' }, { wsl: true, marca: tok });
   assert.strictEqual(w.RENDRA_TERM, tok);
-  assert.deepStrictEqual(w.WSLENV.split(':').sort(), ['BROWSER/u', 'RENDRA_TERM/u', 'X/u']);
+  assert.deepStrictEqual(w.WSLENV.split(':').sort(), ['BROWSER/p', 'RENDRA_TERM/u', 'X/u']);
   // BROWSER já definido pelo usuário: a marca ainda atravessa
   assert.ok(ambientePty({ BROWSER: 'b' }, { wsl: true, marca: tok }).WSLENV.split(':').includes('RENDRA_TERM/u'));
   assert.deepStrictEqual(ambientePty({ WSLENV: 'RENDRA_TERM/u' }, { wsl: true, marca: tok }).WSLENV.split(':').filter(i => i.startsWith('RENDRA_TERM')), ['RENDRA_TERM/u']);
