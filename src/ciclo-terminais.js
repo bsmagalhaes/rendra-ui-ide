@@ -107,6 +107,8 @@ function criarCiclo({ registro, env = process.env, plataforma = process.platform
             try { process.kill(-t.pty.pid, 'SIGHUP'); } catch { /* sem grupo */ }
             await E.esperarMorte([t.pty.pid], prazos.terminal);
             try { process.kill(-t.pty.pid, 'SIGKILL'); } catch { /* já saiu */ }
+            // o grupo só some quando o último zumbi é recolhido: espera (até 1 s) antes de devolver a quem vai instalar
+            for (let i = 0; i < 20; i++) { try { process.kill(-t.pty.pid, 0); } catch { break; } await new Promise(r => setTimeout(r, 50)); }
           })());
           continue;
         }

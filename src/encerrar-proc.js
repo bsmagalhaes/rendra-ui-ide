@@ -26,8 +26,16 @@ const dormir = ms => new Promise(r => setTimeout(r, ms));
 const NOME_DISTRO = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const TOKEN = /^[0-9a-f]{16,64}$/;
 
+// Zumbi (Linux: estado Z) já morreu: só falta o pai, ou o init, recolher. Esperar a morte de um neto órfão não pode
+// depender da pressa de quem o recolhe.
+function zumbi(pid) {
+  if (process.platform !== 'linux') return false;
+  try { return /\) Z /.test(require('fs').readFileSync(`/proc/${pid}/stat`, 'utf8')); } catch { return false; }
+}
+
 function vivo(pid) {
-  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+  try { process.kill(pid, 0); } catch (e) { return e.code === 'EPERM'; }
+  return !zumbi(pid);
 }
 
 async function esperarMorte(pids, ms, vivoFn = vivo) {
@@ -141,6 +149,14 @@ for a in $alvos; do
   p=@{a%%:*}; r=@{a#*:}; sid=@{r%%:*}; st=@{r#*:}
   igual=$(printf '%s\n' "$tab2" | awk -v p=$p -v s=$sid -v t=$st '$1==p && $2==s && $3==t {print "1"}')
   [ "$igual" = 1 ] && { kill -KILL $p 2>/dev/null; printf 'K\t%s\n' "$p"; }
+done
+# só devolve quando a sessão morreu de fato (zumbi conta como morto): quem chama a seguir, como o instalador, não pode ver neto vivo
+i=0
+while [ $i -lt 15 ]; do
+  pend=""
+  for a in $alvos; do st=$(cat /proc/@{a%%:*}/stat 2>/dev/null | awk '{sub(/.*\) /,""); print $1}'); [ -n "$st" ] && [ "$st" != Z ] && pend=1; done
+  [ -z "$pend" ] && break
+  sleep 0.1; i=$((i+1))
 done
 true
 `);

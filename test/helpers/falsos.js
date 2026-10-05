@@ -61,7 +61,15 @@ const claudeFalso = (sb, extra = []) => lancar([sb.cli, ...extra]);
 const codexFalso = (sb, extra = []) => lancar([sb.cliCodex, ...extra]);
 const iscaFalsa = (sb, extra = []) => lancar([sb.isca, ...extra]);
 
-const vivo = pid => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
+// zumbi não conta como vivo (Linux: estado Z; macOS: ps): já morreu, falta só o pai ou o init recolher
+const zumbi = pid => {
+  try {
+    if (process.platform === 'linux') return /\) Z /.test(fs.readFileSync(`/proc/${pid}/stat`, 'utf8'));
+    if (process.platform === 'darwin') return /^Z/.test(require('child_process').execFileSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8' }).trim());
+  } catch { /* sem processo */ }
+  return false;
+};
+const vivo = pid => { try { process.kill(pid, 0); } catch (e) { return e.code === 'EPERM'; } return !zumbi(pid); };
 async function esperar(cond, ms = 8000) {
   const fim = Date.now() + ms;
   while (Date.now() < fim) { if (await cond()) return true; await new Promise(r => setTimeout(r, 50)); }
