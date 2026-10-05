@@ -28,6 +28,11 @@ test('ambientePty: BROWSER e WSLENV só no WSL', () => {
   assert.strictEqual(ambientePty({}, { wsl: true }).WSLENV, 'BROWSER/p');
 });
 
+test('ambientePty: WSLENV do usuário com BROWSER/u vira BROWSER/p (o caminho precisa ser convertido)', () => {
+  const w = ambientePty({ WSLENV: 'A/u:browser/u:B/p' }, { wsl: true });
+  assert.strictEqual(w.WSLENV, 'A/u:BROWSER/p:B/p');
+});
+
 test('ambientePty respeita BROWSER já definido e não duplica o WSLENV', () => {
   assert.strictEqual(ambientePty({ BROWSER: 'meu-navegador' }, { wsl: true }).BROWSER, 'meu-navegador');
   assert.strictEqual(ambientePty({ Browser: 'x' }, { wsl: true }).BROWSER, undefined);

@@ -33,6 +33,8 @@ test('o script fica fora do asar no app instalado', () => {
   assert.strictEqual(caminhoAbridorUrl('C:\\App\\resources\\app.asar\\src'), 'C:\\App\\resources\\app.asar.unpacked\\src\\wsl-abrir-url.sh');
 });
 
+const URL_ESPACO = 'https://exemplo.com/a b?x=1&y=2 3,%41';
+
 function distroWsl() {
   try {
     const saida = execFileSync('wsl.exe', ['-l', '-q'], { encoding: 'utf16le', timeout: 20000, windowsHide: true });
@@ -49,15 +51,41 @@ test('no WSL real, a URL chega inteira ao destino pelo BROWSER da IDE', { skip: 
     // registrador no lugar do rundll32.exe: grava cada argumento recebido, um por linha
     fs.writeFileSync(path.join(bin, 'rundll32.exe'), '#!/bin/sh\nfor a in "$@"; do printf \'%s\\n\' "$a" >> "$RENDRA_REGISTRO"; done\n');
     const env = ambientePty({
-      ...process.env, RENDRA_HOME: sandbox, RENDRA_TESTE_BIN: bin, RENDRA_REGISTRO: registro, RENDRA_URL: URL_TESTE,
-      WSLENV: 'RENDRA_TESTE_BIN/p:RENDRA_REGISTRO/p:RENDRA_URL/u',
+      ...process.env, RENDRA_HOME: sandbox, RENDRA_TESTE_BIN: bin, RENDRA_REGISTRO: registro, RENDRA_URL: URL_TESTE, RENDRA_URL2: URL_ESPACO,
+      WSLENV: 'RENDRA_TESTE_BIN/p:RENDRA_REGISTRO/p:RENDRA_URL/u:RENDRA_URL2/u',
     }, { wsl: true });
-    const cmd = 'test -x "$BROWSER" && PATH="$RENDRA_TESTE_BIN:$PATH" "$BROWSER" "$RENDRA_URL"; echo "saida=$?"';
+    const cmd = 'test -x "$BROWSER" && PATH="$RENDRA_TESTE_BIN:$PATH" "$BROWSER" "$RENDRA_URL" && PATH="$RENDRA_TESTE_BIN:$PATH" "$BROWSER" "$RENDRA_URL2"; echo "saida=$?"';
     const out = execFileSync('wsl.exe', ['-d', distro, '--exec', 'sh', '-c', cmd], { env, encoding: 'utf8', timeout: 60000, windowsHide: true });
     assert.match(out, /saida=0/, out);
     const linhas = fs.readFileSync(registro, 'utf8').split('\n').filter(Boolean);
-    assert.deepStrictEqual(linhas, ['url.dll,FileProtocolHandler', URL_TESTE]);
+    assert.deepStrictEqual(linhas, ['url.dll,FileProtocolHandler', URL_TESTE, 'url.dll,FileProtocolHandler', URL_ESPACO]);
   } finally {
     fs.rmSync(sandbox, { recursive: true, force: true });
   }
+});
+
+// Ramo de reserva do script (rundll32.exe fora do PATH) e código de saída. O diretório de reserva é
+// trocado por um do sandbox (RENDRA_WIN_SYS32): o rundll32.exe de verdade nunca roda.
+function rodarScript({ sys32Tem, saida }) {
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'rendra-url-'));
+  try {
+    const sys32 = path.join(sandbox, 'sys32'); fs.mkdirSync(sys32);
+    const registro = path.join(sandbox, 'registro.txt');
+    if (sys32Tem) fs.writeFileSync(path.join(sys32, 'rundll32.exe'), `#!/bin/sh\nfor a in "$@"; do printf '%s\n' "$a" >> "$RENDRA_REGISTRO"; done\nexit ${saida}\n`);
+    const env = ambientePty({ ...process.env, RENDRA_HOME: sandbox, RENDRA_WIN_SYS32: sys32, RENDRA_REGISTRO: registro, RENDRA_URL: URL_TESTE,
+      WSLENV: 'RENDRA_WIN_SYS32/p:RENDRA_REGISTRO/p:RENDRA_URL/u' }, { wsl: true });
+    const cmd = 'PATH=/usr/bin:/bin "$BROWSER" "$RENDRA_URL"; echo "saida=$?"';
+    const out = execFileSync('wsl.exe', ['-d', distro, '--exec', 'sh', '-c', cmd], { env, encoding: 'utf8', timeout: 60000, windowsHide: true });
+    return { codigo: Number(/saida=(\d+)/.exec(out)[1]), linhas: fs.existsSync(registro) ? fs.readFileSync(registro, 'utf8').split('\n').filter(Boolean) : [] };
+  } finally { fs.rmSync(sandbox, { recursive: true, force: true }); }
+}
+
+test('rundll32.exe fora do PATH: o script usa o diretório de reserva e entrega a URL', { skip: !distro && 'sem WSL' }, () => {
+  const r = rodarScript({ sys32Tem: true, saida: 0 });
+  assert.deepStrictEqual(r, { codigo: 0, linhas: ['url.dll,FileProtocolHandler', URL_TESTE] });
+});
+
+test('o código de saída do destino volta ao chamador (o Claude Code trata ≠ 0 como falha)', { skip: !distro && 'sem WSL' }, () => {
+  assert.strictEqual(rodarScript({ sys32Tem: true, saida: 3 }).codigo, 3);
+  assert.notStrictEqual(rodarScript({ sys32Tem: false, saida: 0 }).codigo, 0); // sem rundll32.exe em lugar nenhum
 });

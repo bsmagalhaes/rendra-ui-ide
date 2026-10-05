@@ -32,10 +32,12 @@ const MARCA = /^[0-9a-f]{16,64}$/;
 function ambientePty(base, { wsl, marca } = {}) {
   const env = { ...base, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
   const achar = nome => Object.keys(env).find(k => k.toUpperCase() === nome);
-  const levar = (nome, modo = 'u') => { // o WSLENV leva a variável do Windows para dentro da distro: /u texto, /p caminho convertido
+  const levar = (nome, modo = 'u', forcar = false) => { // o WSLENV leva a variável do Windows para dentro da distro: /u texto, /p caminho convertido
     const kWslenv = achar('WSLENV') || 'WSLENV';
     const atual = String(env[kWslenv] || '').split(':').filter(Boolean);
-    if (!atual.some(i => i.split('/')[0].toUpperCase() === nome)) atual.push(`${nome}/${modo}`);
+    const i = atual.findIndex(x => x.split('/')[0].toUpperCase() === nome);
+    if (i < 0) atual.push(`${nome}/${modo}`);
+    else if (forcar) atual[i] = `${nome}/${modo}`; // um BROWSER/u antigo não converteria o caminho
     env[kWslenv] = atual.join(':');
   };
   if (typeof marca === 'string' && MARCA.test(marca)) {
@@ -45,7 +47,7 @@ function ambientePty(base, { wsl, marca } = {}) {
   if (!wsl) return env;
   if (achar('BROWSER')) return env; // o usuário já escolheu
   env.BROWSER = caminhoAbridorUrl();
-  levar('BROWSER', 'p');
+  levar('BROWSER', 'p', true);
   return env;
 }
 
