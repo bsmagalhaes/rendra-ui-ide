@@ -15,7 +15,7 @@ const { nomeLivre } = require('../renderer/nome-livre');
 
 const MSG_FORA = 'Caminho fora das pastas abertas';
 const MSG_RAIZ = 'Não dá para excluir ou mover uma pasta aberta como projeto';
-const DECISOES = new Set(['substituir', 'manter-ambos', 'pular']);
+const DECISOES = new Set(['substituir', 'manter-ambos']);
 const VALIDADE_REGISTRO_MS = 5 * 60 * 1000;
 const MAX_REGISTROS = 20;
 const MAX_ORIGENS = 1000;
@@ -166,7 +166,6 @@ function criarOperacoes(ctx) {
     let substituindo = false;
     if (existente) {
       if (decisao === undefined) return { origem, conflito: true, nome, existente: final, ehPasta: existente.isDirectory() };
-      if (decisao === 'pular') return { origem, ok: true, pulado: true };
       if (decisao === 'manter-ambos') {
         final = path.join(dir, nomeLivre(nome, await nomesDe(dir), { ehPasta: ehPasta || ehPastaReal, insensivel }));
       } else {
@@ -253,7 +252,7 @@ function criarOperacoes(ctx) {
 
   const cancelarImportacao = id => { registro.delete(id); return true; };
 
-  return { excluir, itemConfinado, copiar, mover, registrar, importar, cancelarImportacao };
+  return { excluir, copiar, mover, registrar, importar, cancelarImportacao };
 }
 
-module.exports = { criarOperacoes, MSG_FORA, MSG_RAIZ };
+module.exports = { criarOperacoes };

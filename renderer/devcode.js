@@ -955,7 +955,7 @@
       : (tipo === 'mover' ? dev.move : dev.copy)({ origens: subconjunto || origens, destino, decisoes })));
     const recolher = r => {
       for (const i of r.itens) {
-        if (i.ok && !i.pulado) feitos.push(i); else if (i.ok === false) erros.push(i);
+        if (i.ok) feitos.push(i); else if (i.ok === false) erros.push(i);
         if (i.avisos) avisos.push(...i.avisos);
       }
     };
@@ -974,9 +974,9 @@
           recolher(r2);
           for (const c of conflitos) if (fim.decisoes[c.origem] === 'substituir') substituidos.set(c.origem, c.existente);
         } else toast(r2?.error || 'Não foi possível concluir');
-      } else if (tipo === 'importar') dev.importCancel(id);
-      if (tipo === 'importar' && fim.cancelado && fim.origens.length === 0) dev.importCancel(id);
+      }
     }
+    if (tipo === 'importar') dev.importCancel(id); // a lista de arquivos do sistema acaba aqui (idempotente)
     await comOperacao(async () => {
       // o destino substituído equivale a excluir o que estava lá: as abas dele fecham sem salvar (antes de remapear as movidas)
       for (const i of feitos) if (substituidos.has(i.origem)) fecharAbasDe(substituidos.get(i.origem));

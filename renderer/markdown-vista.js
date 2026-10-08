@@ -134,7 +134,7 @@
     return out.join('');
   }
 
-  const api = { render, caminhoLocal, inline: (t, c) => inline(t, c || {}) };
+  const api = { render, caminhoLocal };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RendraMarkdownVista = api;
 })(typeof window !== 'undefined' ? window : this);

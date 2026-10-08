@@ -156,13 +156,14 @@ test('conflito sem decisão: nada é gravado e o item volta como conflito', asyn
   assert.strictEqual(fs.readFileSync(path.join(raiz, 'dest', 'a.txt'), 'utf8'), 'VELHO');
 });
 
-test('decisões: substituir troca, manter-ambos cria "nome (2)", pular ignora', async () => {
+test('decisões: substituir troca e manter-ambos cria "nome (2)"', async () => {
   const raiz = pasta();
   escreve(raiz, { 'a.txt': 'NOVO-A', 'b.txt': 'NOVO-B', 'c.txt': 'NOVO-C', 'dest/a.txt': 'VELHO-A', 'dest/b.txt': 'VELHO-B', 'dest/c.txt': 'VELHO-C' });
   const t = montar(raiz);
   const [a, b, c] = ['a.txt', 'b.txt', 'c.txt'].map(n => path.join(raiz, n));
-  const r = ok(await t.call('dev:copy', { origens: [a, b, c], destino: path.join(raiz, 'dest'), decisoes: { [a]: 'substituir', [b]: 'manter-ambos', [c]: 'pular' } }));
-  assert.strictEqual(r.itens[2].pulado, true);
+  // c.txt fica sem decisão: continua como conflito e nada é gravado para ele
+  const r = ok(await t.call('dev:copy', { origens: [a, b, c], destino: path.join(raiz, 'dest'), decisoes: { [a]: 'substituir', [b]: 'manter-ambos' } }));
+  assert.strictEqual(r.itens[2].conflito, true);
   assert.strictEqual(fs.readFileSync(path.join(raiz, 'dest', 'a.txt'), 'utf8'), 'NOVO-A');
   assert.strictEqual(fs.readFileSync(path.join(raiz, 'dest', 'b.txt'), 'utf8'), 'VELHO-B');
   assert.strictEqual(fs.readFileSync(path.join(raiz, 'dest', 'b (2).txt'), 'utf8'), 'NOVO-B');

@@ -85,4 +85,4 @@ function registrarProtocoloMidia({ session }, manipulador) {
   session.defaultSession.protocol.handle(ESQUEMA, manipulador);
 }
 
-module.exports = { criarManipulador, registrarProtocoloMidia, esquemasPrivilegiados, lerFaixa, quadroPermitido, HOST };
+module.exports = { criarManipulador, registrarProtocoloMidia, esquemasPrivilegiados, lerFaixa, quadroPermitido };

@@ -32,7 +32,6 @@
 
   // Tipo MIME que o protocolo de mídia serve; null para todo o resto (nunca HTML nem SVG)
   const mimeDe = nome => { const e = extensao(nome); return IMAGEM[e] || AUDIO[e] || VIDEO[e] || PDF[e] || null; };
-  const ehMidia = nome => tipoDe(nome) !== 'texto';
 
   // Como o menu Visualizar mostra um arquivo de texto: 'markdown' | 'svg' | 'html' | 'texto'
   function vistaDe(nome) {
@@ -51,7 +50,7 @@
   const ehChaveVista = chave => String(chave).startsWith(PREFIXO_VISTA);
   const caminhoDaChave = chave => (ehChaveVista(chave) ? String(chave).slice(PREFIXO_VISTA.length) : chave);
 
-  const api = { tipoDe, mimeDe, ehMidia, vistaDe, extensao, urlMidia, chaveVista, ehChaveVista, caminhoDaChave, ESQUEMA, PREFIXO_VISTA };
+  const api = { tipoDe, mimeDe, vistaDe, extensao, urlMidia, chaveVista, ehChaveVista, caminhoDaChave, ESQUEMA, PREFIXO_VISTA };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RendraTipoArquivo = api;
 })(typeof window !== 'undefined' ? window : this);
