@@ -94,7 +94,7 @@ test('endereços malformados são recusados: relativo, %2e%2e, %5c solto, vazio,
   assert.strictEqual(await status('rendra-midia://arquivo/%E0%A4%A'), 400); // %-sequência inválida
   assert.strictEqual(await status('rendra-midia://outro/a.png'), 404);
   // decodifica uma vez só: %255c continua sendo "%5c" literal, nome que não existe
-  assert.notStrictEqual(await status(`rendra-midia://arquivo/${encodeURIComponent(path.join(raiz, 'a.png')).replace(/%5C/g, '%255C')}`), 200);
+  assert.notStrictEqual(await status(`rendra-midia://arquivo/${encodeURIComponent(path.join(raiz, 'a.png')).replace(/%(5C|2F)/gi, '%25$1')}`), 200);
   // o endereço certo funciona
   assert.strictEqual(await status(urlMidia(path.join(raiz, 'a.png'))), 200);
   // prefixo da raiz com caminho diferente: <raiz>-irmao não é <raiz>
