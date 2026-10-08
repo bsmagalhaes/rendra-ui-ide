@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Realce de arquivos .env no editor (Monaco): quais nomes de arquivo usam a linguagem `dotenv`, a
 // gramática Monarch e as cores dos tokens. Só cor: nenhum valor é mascarado. Carregado no renderer
 // (window.RendraDotenv) e nos testes (require). Sem DOM.

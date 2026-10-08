@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Escolha do shell ao abrir um novo terminal: Windows ou WSL. Carregado no renderer
 // (window.RendraTermEscolha) e nos testes (require).
 //

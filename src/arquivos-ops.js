@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Operações de arquivo do explorador no processo principal: excluir (Lixeira), copiar, mover e importar. Toda operação
 // repete guard + realDentro (a mesma regra do dev:read), olha o PRÓPRIO item por lstat (nunca segue o link: um symlink que
 // aponta para fora é excluído e movido como link, com o alvo intacto), recusa a raiz de qualquer pasta aberta e tudo que a

@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Encerramento de processos da IDE. Duas regras guiam tudo: só morre o que nasceu de um terminal da IDE (ou o
 // agente da conversa escolhida), e nada é encontrado por nome.
 //

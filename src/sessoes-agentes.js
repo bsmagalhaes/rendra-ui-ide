@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Seletor de conversas do terminal novo: junta o ambiente do terminal (Windows ou uma distro), as raízes onde
 // o Claude Code e o Codex gravam as sessões nesse ambiente, a detecção dos provedores e as duas listagens.
 // Nunca mistura ambientes: Windows lê as pastas do Windows (RENDRA_HOME, CODEX_HOME e settings.claudePath

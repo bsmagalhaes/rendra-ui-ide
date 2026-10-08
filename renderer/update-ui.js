@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Decide o que a interface mostra para cada estado da atualização (botão "Nova versão", título e
 // texto de progresso). Carregado no renderer (window.RendraUpdateUi) e nos testes (require); sem DOM.
 // Nos modos store e none (Microsoft Store e pasta sem origem) nada aparece: a Store atualiza sozinha.

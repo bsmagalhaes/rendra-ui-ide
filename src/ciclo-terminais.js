@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Vida dos terminais da IDE do ponto de vista dos processos: o que registrar quando um terminal abre e como
 // encerrar a árvore dele (ou a de todos) ao fechar o terminal, sair da IDE ou a janela cair. Quem encerra de
 // verdade é src/encerrar-proc.js; o registro em disco (src/registro-terminais.js) cobre a morte à força.

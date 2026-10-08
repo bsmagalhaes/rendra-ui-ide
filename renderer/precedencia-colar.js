@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Quem vence no Ctrl+V do explorador: a área interna (Copiar/Recortar do menu do explorador) ou o clipboard do sistema
 // (arquivos copiados no Explorer/Finder). Regra: vale a interna quando o clipboard do sistema NÃO mudou desde a ação interna
 // (a assinatura gravada na hora do Copiar/Recortar é igual à de agora); senão vale a do sistema. A área interna só vale no

@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Clipboard do sistema, só o que o explorador precisa saber: se há arquivos copiados e uma "assinatura" do conteúdo, para
 // decidir quem vence no Ctrl+V (a cópia interna do explorador ou a do sistema). Os caminhos dos arquivos NUNCA saem daqui:
 // quem os lê é o evento paste/drop do renderer, pelo webUtils no preload (os dois valem nos três sistemas, porque é o

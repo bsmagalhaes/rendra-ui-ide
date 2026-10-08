@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // RTK: ativar um agente (Claude Code ou Codex) em um ambiente (host ou distro WSL).
 // Ordem: confere versão, tira cópia de cada arquivo que vai ser tocado, roda `rtk init`, aplica
 // os ajustes da IDE (hook com caminho absoluto, banco por agente), confere e devolve o estado.

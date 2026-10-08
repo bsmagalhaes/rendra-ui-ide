@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Canal leve da barra de título: identidade e limites de cada combinação provedor + ambiente
 // (Claude e Codex, no Windows e em cada distro WSL em execução). Roda a cada 60 s no processo
 // principal, então:

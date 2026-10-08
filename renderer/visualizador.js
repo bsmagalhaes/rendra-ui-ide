@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Visualizador das abas do editor que não são texto editável: imagem, áudio, vídeo e PDF (o conteúdo vem do protocolo de
 // mídia confinado, nunca de file:). Só monta o elemento; quem guarda as abas, o foco e o teclado é o devcode.js.
 // window.RendraVisualizador.criar({ tipo, caminho, nome }) -> { el, pausar(), soltar() }

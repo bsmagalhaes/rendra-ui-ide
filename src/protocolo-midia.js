@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Protocolo próprio que serve ao renderer a mídia dos projetos abertos (imagem, áudio, vídeo e PDF). O renderer nunca
 // carrega o conteúdo do usuário por file:, que não passa pelo guard: cada pedido confere guard + realDentro (a mesma
 // regra do dev:read), decodifica a URL uma vez, só serve os tipos de mídia (nunca HTML nem SVG, que rodariam no

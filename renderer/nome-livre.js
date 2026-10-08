@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Nome para "Manter os dois": "nome (2).ext", "nome (3).ext"... até achar um nome livre. Função pura (UMD, como o
 // novo-item.js): o main a usa na hora da cópia (é ele que sabe o que existe no disco) e os testes a exercitam direto.
 // Sem extensão ou pasta: "nome (2)". Arquivo que começa com ponto: ".env (2)". Várias extensões: "a.tar (2).gz".

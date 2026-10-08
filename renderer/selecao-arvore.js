@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Pasta selecionada do explorador (o destino do Colar e do soltar). Funções puras (UMD, testáveis no node).
 // Regras: clique em pasta seleciona a pasta (e o devcode.js alterna expandir); clique em arquivo seleciona a pasta que o
 // contém; clique em área vazia limpa a seleção (o destino volta a ser a raiz). A seleção vive em ws.selecionado (um

@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Configurações: estado da caixa "Terminal moderno do Windows (ConPTY embarcado)". Carregado no
 // renderer (window.RendraConptyUi) e nos testes (require). Sem DOM.
 //

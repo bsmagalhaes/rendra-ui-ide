@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Registro dos terminais vivos da IDE em `userData/terminais-vivos.json`. Serve a um caso só: a IDE morreu à
 // força (instalador, queda, taskkill) e o `before-quit` não rodou. Ao abrir de novo, a IDE varre o registro e
 // encerra o que sobrou dos terminais dela, e só isso:

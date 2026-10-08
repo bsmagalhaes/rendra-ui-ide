@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Markdown do menu Visualizar: módulo puro (UMD, testável no node) que devolve HTML. Escapa TUDO primeiro, como o md() do
 // about.js: o HTML cru de dentro do .md aparece como texto, então não há o que sanitizar. Cobre títulos, parágrafos, listas
 // com marcador e numeradas, blocos de código com cercas, código inline, negrito, itálico, citação, linha horizontal, tabela

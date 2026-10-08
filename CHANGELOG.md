@@ -1,6 +1,6 @@
 # Novidades
 
-## Próxima versão
+## 1.8.0 · 08/10/2026
 ### Imagens, áudio, vídeo e PDF no editor
 - Clicar numa imagem, num áudio, num vídeo ou num PDF do explorador abre uma aba no painel do editor, com o visualizador ou o player. As abas de mídia ficam junto das de texto, fecham com Ctrl+W, voltam quando você reabre a IDE e não têm o que salvar. Outros arquivos que não são texto (zip, exe e parecidos) continuam sem abrir, e agora a IDE diz isso com uma mensagem clara.
 - O conteúdo chega ao visualizador por um canal próprio da IDE, que só serve arquivos das pastas abertas no projeto. O vídeo aceita avançar e voltar sem carregar o arquivo inteiro.

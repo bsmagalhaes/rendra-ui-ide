@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Fila de decisões de "nome repetido" ao colar, mover ou soltar: Substituir / Manter os dois, com a caixa "Aplicar a todos".
 // Função pura (UMD, testável no node): o devcode.js só pergunta, item por item, o que esta fila pede. Cancelar interrompe os
 // itens que ainda não têm decisão; as decisões já dadas valem.

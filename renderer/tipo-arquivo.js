@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Tipo do arquivo pela extensão, para o explorador decidir entre editar, visualizar ou avisar. Carregado no renderer
 // (window.RendraTipoArquivo), no processo principal (protocolo de mídia) e nos testes (require).
 // Nunca pelo conteúdo: o byte nulo continua sendo a regra do dev:read para o editor.

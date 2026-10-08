@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Caminhos que contêm outros e caminhos que mudam de lugar (excluir ou mover uma pasta com abas abertas). Função pura:
 // o explorador usa a mesma regra para abas, seleção, pastas expandidas e a área interna de copiar/recortar.
 // Carregado no renderer (window.RendraRemapear) e nos testes (require).

@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Limites do Codex para a barra de título, em leitura leve (a cada 60 s, por ambiente).
 // Não usa aggregateCodex (varre 90 dias e calcula custo): lista os rollouts dos últimos 8 dias
 // (a janela é semanal), ordena por mtime decrescente (o nome traz a data de INÍCIO da sessão, e a
