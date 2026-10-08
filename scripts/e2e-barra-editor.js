@@ -1255,6 +1255,120 @@ CENARIOS['realce-env'] = async () => {
   });
 };
 
+// Mídia no explorador (Fase 1): imagem, áudio, vídeo e PDF abrem numa aba do grupo com visualizador, por um protocolo
+// próprio confinado; outro binário diz que não abre; Ctrl+W/Ctrl+S, troca de aba, persistência e a CSP.
+const FIXTURES_MIDIA = path.join(ROOT, 'test', 'fixtures', 'midia');
+const midia = nome => fs.readFileSync(path.join(FIXTURES_MIDIA, nome));
+CENARIOS['midia-abas'] = async () => {
+  const arquivos = { 'foto.png': midia('teste.png'), 'som.mp3': midia('teste.mp3'), 'clipe.mp4': midia('teste.mp4'), 'doc.pdf': midia('teste.pdf'), 'falso.zip': midia('falso.zip') };
+  await comApp({ semTerminal: true, arquivos, workspaces: [{ name: 'demo', cols: 1 }] }, async (app, sb) => {
+    await app.espera(`document.querySelectorAll('.ws.active .dev-node').length >= 5`, 20000, 'árvore carregada');
+    const clicaNo = nome => app.ev(`[...document.querySelectorAll('.ws.active .dev-node')].find(n => n.querySelector('.dev-node-name')?.textContent === ${JSON.stringify(nome)})?.click()`);
+    const abaAtiva = () => app.ev(`document.querySelector('.ws.active .dev-tab.active .dev-tab-name')?.textContent ?? null`);
+    const abrirMidia = async nome => { await clicaNo(nome); await app.espera(`document.querySelector('.ws.active .dev-tab.active .dev-tab-name')?.textContent === ${JSON.stringify(nome)}`, 15000, `aba ${nome}`); };
+    const painel = async nome => { const c = await app.caixa('.ws.active .dev-editors'); return app.foto(nome, { x: c.x, y: c.y, width: c.w, height: c.h }); };
+    const visivel = sel => app.ev(`(() => { const e = document.querySelector('.ws.active .dev-viewer:not([hidden]) ${sel}'); if (!e) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; })()`);
+    const hashDoDisco = nome => require('crypto').createHash('sha256').update(fs.readFileSync(path.join(sb.projeto, nome))).digest('hex');
+
+    // imagem
+    const hashPng = hashDoDisco('foto.png');
+    await abrirMidia('foto.png');
+    await app.espera(`document.querySelector('.ws.active .dev-viewer:not([hidden]) img')?.naturalWidth > 0`, 10000, 'imagem carregada');
+    const img = await app.ev(`(() => { const i = document.querySelector('.ws.active .dev-viewer:not([hidden]) img'); return { w: i.naturalWidth, src: i.src.slice(0, 24) }; })()`);
+    afirma(img.w === 120 && img.src.startsWith('rendra-midia://'), `imagem 120 px pelo protocolo da mídia (${JSON.stringify(img)})`);
+    afirma(await visivel('img'), 'a imagem está visível e com tamanho');
+    await painel('midia-imagem');
+
+    // Ctrl+S na aba de mídia não grava nada
+    await app.tecla('s', { ctrl: true });
+    await sleep(400);
+    afirma(hashDoDisco('foto.png') === hashPng, 'Ctrl+S na aba de imagem não altera o arquivo no disco');
+
+    // áudio
+    await abrirMidia('som.mp3');
+    await app.espera(`Number.isFinite(document.querySelector('.ws.active .dev-viewer:not([hidden]) audio')?.duration)`, 10000, 'duração do áudio');
+    const aud = await app.ev(`(() => { const a = document.querySelector('.ws.active .dev-viewer:not([hidden]) audio'); return { dur: a.duration, ctl: a.controls }; })()`);
+    afirma(aud.dur > 0.5 && aud.ctl, `áudio com controles e duração ${aud.dur.toFixed(2)} s`);
+    afirma(await app.ev(`document.querySelectorAll('.ws.active .dev-viewer:not([hidden])').length === 1`), 'só um visualizador visível por vez');
+    await painel('midia-audio');
+
+    // vídeo: toca e a troca de aba o pausa
+    await abrirMidia('clipe.mp4');
+    await app.espera(`document.querySelector('.ws.active .dev-viewer:not([hidden]) video')?.readyState >= 2`, 10000, 'vídeo carregado');
+    const vid = await app.ev(`(() => { const v = document.querySelector('.ws.active .dev-viewer:not([hidden]) video'); return { w: v.videoWidth, h: v.videoHeight, dur: v.duration }; })()`);
+    afirma(vid.w === 128 && vid.h === 96 && vid.dur > 0.5, `vídeo ${vid.w}x${vid.h} de ${vid.dur.toFixed(1)} s`);
+    // seek (usa Range): o tempo muda e o vídeo continua legível
+    const seek = await app.ev(`new Promise(res => { const v = document.querySelector('.ws.active .dev-viewer:not([hidden]) video'); v.addEventListener('seeked', () => res({ t: v.currentTime, rs: v.readyState }), { once: true }); v.currentTime = 0.6; setTimeout(() => res({ t: -1 }), 4000); })`);
+    afirma(seek.t > 0.5 && seek.rs >= 2, `seek no vídeo funciona (${JSON.stringify(seek)})`);
+    await app.ev(`document.querySelector('.ws.active .dev-viewer:not([hidden]) video').play().catch(() => {})`);
+    await sleep(300);
+    await painel('midia-video');
+    await abrirMidia('som.mp3');
+    afirma(await app.ev(`[...document.querySelectorAll('.ws.active video')].every(v => v.paused)`), 'trocar de aba pausa o vídeo');
+    afirma(await app.ev(`[...document.querySelectorAll('.ws.active .dev-viewer')].filter(e => !e.hidden).length === 1`), 'o vídeo da aba anterior fica escondido');
+
+    // PDF
+    await abrirMidia('doc.pdf');
+    await app.espera(`!!document.querySelector('.ws.active .dev-viewer:not([hidden]) iframe')`, 10000, 'iframe do PDF');
+    await sleep(2500);
+    afirma(await visivel('iframe'), 'o PDF está num iframe visível');
+    await painel('midia-pdf');
+
+    // outro binário: a mensagem diz que não abre, sem aba nova
+    const abasAntes = await app.ev(`document.querySelectorAll('.ws.active .dev-tab').length`);
+    await clicaNo('falso.zip');
+    await sleep(500);
+    const toast = await app.ev(`document.getElementById('toast').textContent`);
+    afirma(toast.includes('Este tipo de arquivo não abre na IDE'), `zip: "${toast}"`);
+    afirma(await app.ev(`document.querySelectorAll('.ws.active .dev-tab').length`) === abasAntes, 'o zip não abre aba');
+
+    // de volta ao texto: o Monaco reaparece com o modelo certo
+    await abrirMidia('a.txt');
+    await app.espera(`document.querySelector('.ws.active .monaco-editor') && getComputedStyle(document.querySelector('.ws.active .monaco-editor')).visibility !== 'hidden'`, 10000, 'Monaco visível');
+    afirma(await textoDoModelo(app, 'a.txt') === 'primeiro arquivo\nlinha dois\n', 'a aba de texto mostra o arquivo certo depois da mídia');
+    afirma(await app.ev(`!document.querySelector('.ws.active .dev-editor-host.com-vista')`), 'sem a marca de visualização no grupo');
+    await abrirMidia('foto.png');
+    afirma(await app.ev(`getComputedStyle(document.querySelector('.ws.active .monaco-editor')).visibility === 'hidden'`), 'com a mídia ativa o Monaco fica escondido atrás do visualizador');
+
+    // persistência: as abas de mídia voltam depois de reiniciar
+    await sleep(600);
+    await abrirMidia('foto.png');
+    await sleep(600);
+    const grupos = lerConfig(sb).devcode.workspaces.list[0].groups;
+    afirma(grupos[0].tabs.some(t => t.endsWith('foto.png')) && grupos[0].tabs.some(t => t.endsWith('clipe.mp4')), `a configuração guarda as abas de mídia (${grupos[0].tabs.map(t => path.basename(t)).join(', ')})`);
+    const app2 = await app.reiniciar();
+    await app2.espera(`[...document.querySelectorAll('.ws.active .dev-tab .dev-tab-name')].some(e => e.textContent === 'foto.png')`, 30000, 'aba foto.png restaurada');
+    afirma(await app2.ev(`document.querySelector('.ws.active .dev-tab.active .dev-tab-name')?.textContent`) === 'foto.png', 'a aba ativa restaurada é a foto.png');
+    await app2.espera(`document.querySelector('.ws.active .dev-viewer:not([hidden]) img')?.naturalWidth > 0`, 15000, 'imagem restaurada carregou');
+
+    // arquivo apagado entre sessões: some em silêncio
+    const app3 = await (async () => { fs.rmSync(path.join(sb.projeto, 'clipe.mp4')); return app2.reiniciar(); })();
+    await app3.espera(`[...document.querySelectorAll('.ws.active .dev-tab .dev-tab-name')].some(e => e.textContent === 'foto.png')`, 30000, 'abas restauradas');
+    afirma(await app3.ev(`![...document.querySelectorAll('.ws.active .dev-tab .dev-tab-name')].some(e => e.textContent === 'clipe.mp4')`), 'a aba do vídeo apagado não volta');
+
+    // Ctrl+W com o foco no visualizador fecha a aba
+    await app3.espera(`document.activeElement?.classList.contains('dev-viewer') || !!document.querySelector('.ws.active .dev-viewer:not([hidden])')`, 10000, 'visualizador na tela');
+    await app3.ev(`document.querySelector('.ws.active .dev-viewer:not([hidden])').focus()`);
+    const abaAntesDeFechar = await app3.ev(`document.querySelector('.ws.active .dev-tab.active .dev-tab-name')?.textContent`);
+    await app3.tecla('w', { ctrl: true });
+    await app3.espera(`document.querySelector('.ws.active .dev-tab.active .dev-tab-name')?.textContent !== ${JSON.stringify(abaAntesDeFechar)}`, 8000, 'Ctrl+W fechou a aba');
+    afirma(await app3.ev(`![...document.querySelectorAll('.ws.active .dev-tab .dev-tab-name')].some(e => e.textContent === ${JSON.stringify(abaAntesDeFechar)})`), `Ctrl+W com o foco no visualizador fecha a aba ${abaAntesDeFechar}`);
+
+    // CSP: continua sem rede, sem blob e sem script de fora
+    const csp = await app3.ev(`(async () => {
+      const r = {};
+      r.fetchWeb = await fetch('https://example.com/').then(() => 'passou', () => 'bloqueado');
+      r.fetchMidia = await fetch('rendra-midia://arquivo/x').then(() => 'passou', () => 'bloqueado');
+      r.script = await new Promise(res => { const s = document.createElement('script'); s.src = 'https://exemplo.invalid/x.js'; s.onload = () => res('carregou'); s.onerror = () => res('bloqueado'); document.head.appendChild(s); });
+      r.blobFrame = await new Promise(res => { const f = document.createElement('iframe'); const b = URL.createObjectURL(new Blob(['<p>x</p>'], { type: 'text/html' })); document.addEventListener('securitypolicyviolation', e => { if (e.violatedDirective.startsWith('frame-src')) res('bloqueado'); }, { once: true }); f.src = b; document.body.appendChild(f); setTimeout(() => res('sem violação'), 2500); });
+      return r;
+    })()`);
+    afirma(csp.fetchWeb === 'bloqueado' && csp.fetchMidia === 'bloqueado', `fetch à web e ao protocolo bloqueados (${JSON.stringify(csp)})`);
+    afirma(csp.script === 'bloqueado', 'script de fora não carrega');
+    afirma(csp.blobFrame === 'bloqueado', 'iframe com blob: continua bloqueado');
+  });
+};
+
 // ── EXECUÇÃO ────────────────────────────────────────────────────────────────
 async function main() {
   const nomes = ESCOLHIDOS || Object.keys(CENARIOS);

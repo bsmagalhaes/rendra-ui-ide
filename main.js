@@ -3,6 +3,9 @@ const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, Notificatio
 const path = require('path');
 const fs = require('fs');
 
+// Esquema do protocolo de mídia do explorador (src/protocolo-midia.js): precisa ser declarado antes de o app ficar pronto
+require('electron').protocol.registerSchemesAsPrivileged(require('./src/protocolo-midia').esquemasPrivilegiados());
+
 // When Rendra IDE is started from inside a Claude Code session it inherits that session's
 // markers. Passed on to DevCode terminals, they make a `claude` launched there think it is a
 // child session and turn transcript saving off — so those sessions would never be counted.
@@ -616,6 +619,8 @@ ipcMain.handle('show-notification', (_e, { title, body }) => {
 
 app.whenReady().then(async () => {
   if (!instanciaUnica) return; // a segunda instância já pediu para sair
+  // o protocolo de mídia só existe na sessão padrão (a da janela): o Rendra Browser usa outra partição e fica sem ele
+  require('./src/protocolo-midia').registrarProtocoloMidia(require('electron'), devcode.manipuladorMidia);
   // sobras de uma IDE que morreu à força (registro de terminais vivos), antes de abrir qualquer terminal novo
   await Promise.race([devcode.varrerAoAbrir(), new Promise(r => setTimeout(r, 8000))]);
   createWindow();

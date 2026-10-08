@@ -22,6 +22,17 @@
   let monaco = null;
   let monacoLoading = null;
   const files = new Map(); // path → { model, savedVersion, name } (shared by all workspaces)
+  // Abas que não são arquivo editável: mídia (chave = o caminho) e visualização (chave "vista:<caminho>": texto somente
+  // leitura, Markdown, SVG, HTML). Nunca entram em `files`: isDirty, saveFile e o Ctrl+S só enxergam arquivos editáveis.
+  const viewers = new Map(); // key → { tipo, path, name, texto?, model? }
+  const TA = window.RendraTipoArquivo;
+  const entryOf = key => files.get(key) || viewers.get(key);
+  const pathOfKey = key => (key ? TA.caminhoDaChave(key) : key);
+  const nomeDaAba = key => {
+    const e = entryOf(key);
+    const n = e?.name || baseName(pathOfKey(key));
+    return TA.ehChaveVista(key) ? `${n} (visualização)` : n;
+  };
   const ptyOwner = new Map(); // pty id → { ws, term }
 
   const toast = msg => (typeof showToast === 'function' ? showToast(msg) : console.log(msg));
@@ -167,7 +178,10 @@
         editorHidden: !!ws.editorHidden,
         wsl: ws.root?.wsl?.viaWindows ? { distro: ws.root.wsl.distro, linuxPath: ws.root.wsl.linuxPath } : null,
         // workspaces never activated this run keep the tabs they were restored with
-        groups: ws.restore || ws.groups.map(g => ({ tabs: g.tabs, active: g.active })),
+        groups: ws.restore || ws.groups.map(g => {
+          const tabs = g.tabs.filter(k => !TA.ehChaveVista(k)); // visualização não volta na próxima abertura
+          return { tabs, active: tabs.includes(g.active) ? g.active : (tabs[0] || null) };
+        }),
       })),
       active: Math.max(0, workspaces.indexOf(activeWs)),
     }), 300);
@@ -385,8 +399,8 @@
       `${alive === 1 ? 'O terminal aberto será encerrado' : `Os ${alive} terminais abertos serão encerrados`}, junto com o que estiver rodando neles.`,
     ))) return;
     for (const t of [...ws.terms]) await killTerminal(ws, t);
-    ws.groups.forEach(g => g.editor.dispose());
-    exclusive.forEach(p => { files.get(p)?.model.dispose(); files.delete(p); });
+    ws.groups.forEach(g => { soltarVistas(g); g.editor.dispose(); });
+    exclusive.forEach(liberarAba);
     ws.el.remove();
     const idx = workspaces.indexOf(ws);
     workspaces.splice(idx, 1);
@@ -644,7 +658,7 @@
       parent.appendChild(err);
       return;
     }
-    const current = ws.activeGroup?.active;
+    const current = pathOfKey(ws.activeGroup?.active);
     const subs = new Set(ws.git?.submodules || []);
     for (const e of entries) {
       const row = document.createElement('div');
@@ -872,7 +886,7 @@
     if (!alvo.isDir) {
       await openFile(ws, alvo.path);
       const editor = ws.activeGroup?.editor;
-      if (editor && ws.activeGroup.active === alvo.path && linha) {
+      if (editor && ws.activeGroup.active === alvo.path && files.has(alvo.path) && linha) { // aba de mídia não tem posição
         const pos = { lineNumber: linha, column: coluna || 1 };
         editor.setPosition(pos);
         editor.revealLineInCenter(linha);
@@ -898,7 +912,7 @@
   }
 
   function markActiveInTree(ws) {
-    const current = ws.activeGroup?.active;
+    const current = pathOfKey(ws.activeGroup?.active);
     ws.refs.tree.querySelectorAll('.dev-node.file').forEach(n => n.classList.toggle('active', n.dataset.path === current));
   }
 
@@ -916,7 +930,7 @@
       </div>
       <div class="dev-editor-host"></div>`;
     ws.refs.editors.appendChild(el);
-    const group = { id: ws.nextGroupId++, el, tabsEl: el.querySelector('.dev-tabs'), tabs: [], active: null };
+    const group = { id: ws.nextGroupId++, el, tabsEl: el.querySelector('.dev-tabs'), hostEl: el.querySelector('.dev-editor-host'), tabs: [], active: null, vistas: new Map() };
     group.editor = monaco.editor.create(el.querySelector('.dev-editor-host'), {
       theme: 'rendra',
       automaticLayout: true,
@@ -946,6 +960,15 @@
     group.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => group.active && saveFile(group.active));
     group.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyW, () => closeTab(ws, group, group.active));
     group.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Backslash, () => splitActive(ws));
+    // Aba de visualização (mídia, Markdown, HTML...) não tem Monaco: Ctrl+W e Ctrl+\ valem com o foco no visualizador, e o
+    // Ctrl+S não faz nada (nada a salvar). O visualizador tem tabindex e recebe o foco ao ativar a aba.
+    group.hostEl.addEventListener('keydown', ev => {
+      if (!ev.target.closest?.('.dev-viewer') || !(ev.ctrlKey || ev.metaKey) || ev.altKey || ev.shiftKey) return;
+      const k = ev.key.toLowerCase();
+      if (k === 'w') { ev.preventDefault(); closeTab(ws, group, group.active); }
+      else if (ev.code === 'Backslash') { ev.preventDefault(); setActiveGroup(ws, group); splitActive(ws); }
+      else if (k === 's') ev.preventDefault();
+    });
     el.addEventListener('mousedown', () => setActiveGroup(ws, group));
     el.querySelector('[data-act=split]').addEventListener('click', () => { setActiveGroup(ws, group); splitActive(ws); });
     el.querySelector('[data-act=close-group]').addEventListener('click', () => closeGroup(ws, group));
@@ -975,29 +998,82 @@
     markActiveInTree(ws);
   }
 
+  const MSG_NAO_ABRE = 'Este tipo de arquivo não abre na IDE';
+  const existeNoDisco = async p => {
+    const lista = await dev.list(parentOf(p));
+    return Array.isArray(lista) && lista.some(e => lower(e.path) === lower(p));
+  };
+
+  // Grupo que recebe a aba: o pedido, um novo, o ativo ou o primeiro
+  const grupoDoPedido = (ws, opts) => opts.group || (opts.newGroup ? createGroup(ws) : (ws.activeGroup || ws.groups[0] || createGroup(ws)));
+
+  // Abre uma aba que não é texto editável (mídia: a chave é o próprio caminho). Na restauração um arquivo que sumiu é silencioso.
+  async function abrirAbaDeVista(ws, key, dados, opts = {}) {
+    if (opts.restaurando && !(await existeNoDisco(pathOfKey(key)))) return;
+    const antigo = viewers.get(key);
+    viewers.set(key, { ...dados, name: baseName(dados.path), recriar: !!antigo });
+    if (!opts.restaurando) setEditorHidden(ws, 'arquivo-aberto');
+    const group = grupoDoPedido(ws, opts);
+    if (!group.tabs.includes(key)) group.tabs.push(key);
+    showInGroup(ws, group, key);
+  }
+
   async function openFile(ws, filePath, opts = {}) {
     try { await loadMonaco(); } catch (e) { toast(e.message); return; }
+    const tipo = TA.tipoDe(filePath);
+    if (tipo !== 'texto') return abrirAbaDeVista(ws, filePath, { tipo, path: filePath }, opts);
     if (!files.has(filePath)) {
       const res = await dev.read(filePath);
-      if (res.error) { if (!opts.group && !opts.newGroup) toast(res.error); return; }
+      if (res.error) { if (!opts.group && !opts.newGroup) toast(res.binario ? MSG_NAO_ABRE : res.error); return; }
       const model = monaco.editor.createModel(res.content, window.RendraDotenv.linguagemPorNome(filePath), monaco.Uri.file(filePath));
       files.set(filePath, { model, savedVersion: model.getAlternativeVersionId(), name: baseName(filePath) });
       model.onDidChangeContent(() => renderAllTabs());
     }
     if (!opts.restaurando) setEditorHidden(ws, 'arquivo-aberto'); // file opened by the user: the panel comes back
-    const group = opts.group || (opts.newGroup ? createGroup(ws) : (ws.activeGroup || ws.groups[0] || createGroup(ws)));
+    const group = grupoDoPedido(ws, opts);
     if (!group.tabs.includes(filePath)) group.tabs.push(filePath);
     showInGroup(ws, group, filePath);
   }
 
-  function showInGroup(ws, group, filePath) {
-    const entry = files.get(filePath);
+  // Mostra o visualizador da aba (um elemento por grupo: o mesmo caminho pode estar aberto em dois grupos) e esconde o Monaco
+  function mostrarVista(group, key, entry) {
+    group.vistas.forEach((v, k) => { if (k !== key) { v.pausar(); v.el.hidden = true; } });
+    let v = group.vistas.get(key);
+    if (v && entry.recriar) { soltarVista(group, key); v = null; }
+    entry.recriar = false;
+    if (!v) {
+      v = window.RendraVisualizador.criar({ tipo: entry.tipo, caminho: entry.path, nome: entry.name, texto: entry.texto });
+      group.vistas.set(key, v);
+      group.hostEl.appendChild(v.el);
+    }
+    v.el.hidden = false;
+    group.hostEl.classList.add('com-vista');
+  }
+  function soltarVista(group, key) { const v = group.vistas.get(key); if (v) { v.soltar(); group.vistas.delete(key); } }
+  function soltarVistas(group) { group.vistas.forEach(v => v.soltar()); group.vistas.clear(); }
+  // Fim da vida de uma aba: o modelo do Monaco e a entrada do visualizador (o elemento de cada grupo se solta em soltarVista)
+  function liberarAba(key) {
+    const f = files.get(key);
+    if (f) { f.model.dispose(); files.delete(key); return; }
+    const v = viewers.get(key);
+    if (v) { v.model?.dispose(); viewers.delete(key); }
+  }
+
+  function showInGroup(ws, group, key) {
+    const entry = entryOf(key);
     if (!entry) return;
-    group.active = filePath;
-    group.editor.setModel(entry.model);
+    group.active = key;
+    if (entry.model) {
+      group.vistas.forEach(v => { v.pausar(); v.el.hidden = true; });
+      group.hostEl.classList.remove('com-vista');
+      group.editor.updateOptions({ readOnly: !!entry.somenteLeitura });
+      group.editor.setModel(entry.model);
+    } else {
+      mostrarVista(group, key, entry);
+    }
     setActiveGroup(ws, group);
     renderTabs(group);
-    group.editor.focus();
+    if (entry.model) group.editor.focus(); else group.vistas.get(key)?.el.focus({ preventScroll: true });
     persist();
   }
 
@@ -1005,9 +1081,9 @@
     // renderTabs refaz o innerHTML (a cada edição): a aba focada seria perdida, então o foco volta à mesma aba, pelo caminho
     const focada = group.tabsEl.contains(document.activeElement) ? document.activeElement.closest?.('.dev-tab')?.dataset.path : null;
     group.tabsEl.innerHTML = group.tabs.map(p => `
-      <div class="dev-tab${p === group.active ? ' active' : ''}${isDirty(p) ? ' dirty' : ''}" data-path="${esc(p)}" role="tab" tabindex="0" draggable="true" aria-selected="${p === group.active}" aria-label="${esc(files.get(p)?.name || baseName(p))}" title="${esc(p)}">
-        <span class="dev-tab-name">${esc(files.get(p)?.name || baseName(p))}</span>
-        <span class="dev-tab-close" role="button" aria-label="Fechar ${esc(files.get(p)?.name || baseName(p))}" title="Fechar (Ctrl+W)">${isDirty(p) ? '●' : '×'}</span>
+      <div class="dev-tab${p === group.active ? ' active' : ''}${isDirty(p) ? ' dirty' : ''}${TA.ehChaveVista(p) ? ' vista' : ''}" data-path="${esc(p)}" role="tab" tabindex="0" draggable="true" aria-selected="${p === group.active}" aria-label="${esc(nomeDaAba(p))}" title="${esc(pathOfKey(p))}">
+        <span class="dev-tab-name">${esc(nomeDaAba(p))}</span>
+        <span class="dev-tab-close" role="button" aria-label="Fechar ${esc(nomeDaAba(p))}" title="Fechar (Ctrl+W)">${isDirty(p) ? '●' : '×'}</span>
       </div>`).join('');
     if (focada != null) [...group.tabsEl.querySelectorAll('.dev-tab')].find(el => el.dataset.path === focada)?.focus({ preventScroll: true });
   }
@@ -1020,7 +1096,7 @@
     renderTabs(group);
     persist();
     const p = r.lista[r.indice];
-    anunciar(files.get(p)?.name || baseName(p), r.indice, r.lista.length);
+    anunciar(nomeDaAba(p), r.indice, r.lista.length);
   }
   function moverAbaDoEditor(group, dePath, alvoPath, depois) {
     aplicarOrdemAbasDoEditor(group, window.RendraReordenar.moverPara(group.tabs, group.tabs.indexOf(dePath), group.tabs.indexOf(alvoPath), depois));
@@ -1043,7 +1119,8 @@
     const idx = group.tabs.indexOf(filePath);
     if (idx < 0) return;
     group.tabs.splice(idx, 1);
-    if (!shared) { files.get(filePath)?.model.dispose(); files.delete(filePath); }
+    soltarVista(group, filePath);
+    if (!shared) liberarAba(filePath);
     if (!group.tabs.length) { removeGroup(ws, group); return; }
     if (group.active === filePath) showInGroup(ws, group, group.tabs[Math.max(0, idx - 1)]);
     else { renderTabs(group); persist(); }
@@ -1053,11 +1130,12 @@
   async function closeGroup(ws, group) {
     const exclusive = group.tabs.filter(p => !openElsewhere(group, p));
     if (!(await confirmClose(exclusive))) return;
-    exclusive.forEach(p => { files.get(p)?.model.dispose(); files.delete(p); });
+    exclusive.forEach(liberarAba);
     removeGroup(ws, group);
   }
 
   function removeGroup(ws, group) {
+    soltarVistas(group);
     group.editor.dispose();
     group.el.remove();
     ws.groups = ws.groups.filter(g => g !== group);

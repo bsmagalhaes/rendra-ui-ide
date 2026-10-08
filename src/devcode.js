@@ -16,6 +16,7 @@ const { validarNome } = require('../renderer/novo-item');
 const { ambientePty } = require('./terminal-env');
 const { candidatosDoCaminho } = require('./caminho-terminal');
 const { temImagem } = require('./clip-imagem');
+const { criarManipulador: criarManipuladorMidia } = require('./protocolo-midia');
 const crypto = require('crypto');
 const { criarCiclo } = require('./ciclo-terminais');
 const { criarRegistro } = require('./registro-terminais');
@@ -319,7 +320,7 @@ function registerDevCode({ ipcMain, dialog, store, getWindow, userData, deps = {
       const stat = fs.statSync(full);
       if (stat.size > MAX_FILE_BYTES) return { error: 'Arquivo grande demais para abrir no editor (limite de 5 MB)' };
       const buf = fs.readFileSync(full);
-      if (buf.subarray(0, 8000).includes(0)) return { error: 'Arquivo binário, não dá para abrir no editor' };
+      if (buf.subarray(0, 8000).includes(0)) return { error: 'Arquivo binário, não dá para abrir no editor', binario: true };
       return { content: buf.toString('utf8') };
     } catch (e) {
       return { error: e.message };
@@ -722,7 +723,10 @@ function registerDevCode({ ipcMain, dialog, store, getWindow, userData, deps = {
     }
   };
 
-  return { killAll, guardWindowClose, confirmarSaidaDaIde, atualizarEInstalar, varrerAoAbrir, prepararSaida: () => ciclo.prepararSaida() };
+  // Manipulador do protocolo de mídia (main.js o registra só na sessão padrão): cada pedido passa por guard + realDentro
+  const manipuladorMidia = criarManipuladorMidia({ guard, realDentro, comLimite });
+
+  return { killAll, guardWindowClose, confirmarSaidaDaIde, atualizarEInstalar, varrerAoAbrir, prepararSaida: () => ciclo.prepararSaida(), manipuladorMidia };
 }
 
 module.exports = { registerDevCode, toWslUnc, opcoesConpty };

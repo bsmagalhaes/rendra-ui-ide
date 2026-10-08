@@ -9,7 +9,9 @@
                  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
                  font-src 'self' data: https://fonts.gstatic.com;
                  worker-src 'self' blob: data:;
-                 img-src 'self' data:;
+                 img-src 'self' data: rendra-midia:;
+                 media-src rendra-midia:;
+                 frame-src rendra-midia:;
                  connect-src 'none';">
   <title>Rendra IDE</title>
   <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css">
@@ -639,6 +641,8 @@
 <script src="terminal-keys.js"></script>
 <script src="wheel-lines.js"></script>
 <script src="novo-item.js"></script>
+<script src="tipo-arquivo.js"></script>
+<script src="remapear-caminhos.js"></script>
 <script src="terminal-escolha.js"></script>
 <script src="sessoes-escolha.js"></script>
 <script src="consumo.js"></script>
@@ -651,6 +655,7 @@
 <script src="dotenv-lang.js"></script>
 <script src="caminhos-terminal.js"></script>
 <script src="reordenar-abas.js"></script>
+<script src="visualizador.js"></script>
 <script src="devcode.js"></script>
 <script src="setup.js"></script>
 <script src="pricing.js"></script>

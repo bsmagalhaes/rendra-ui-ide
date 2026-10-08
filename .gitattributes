@@ -1,2 +1,5 @@
 # O script do WSL precisa de LF: com CRLF o shebang quebra (o git do Windows converteria)
 src/*.sh text eol=lf
+
+# Fixtures de mídia: bytes exatos (sem conversão de fim de linha)
+test/fixtures/midia/* -text
