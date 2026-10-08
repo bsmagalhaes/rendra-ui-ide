@@ -1,5 +1,21 @@
 # Novidades
 
+## Próxima versão
+### Imagens, áudio, vídeo e PDF no editor
+- Clicar numa imagem, num áudio, num vídeo ou num PDF do explorador abre uma aba no painel do editor, com o visualizador ou o player. As abas de mídia ficam junto das de texto, fecham com Ctrl+W, voltam quando você reabre a IDE e não têm o que salvar. Outros arquivos que não são texto (zip, exe e parecidos) continuam sem abrir, e agora a IDE diz isso com uma mensagem clara.
+- O conteúdo chega ao visualizador por um canal próprio da IDE, que só serve arquivos das pastas abertas no projeto. O vídeo aceita avançar e voltar sem carregar o arquivo inteiro.
+### Menu Visualizar
+- Botão direito num arquivo, Visualizar: texto abre somente leitura (a aba de edição do mesmo arquivo continua à parte); Markdown aparece formatado, com as imagens da pasta; SVG aparece como imagem; HTML aparece renderizado, sem scripts e sem navegar para fora. O clique simples em SVG, HTML e Markdown continua abrindo para editar.
+### Excluir, Copiar, Recortar e Colar
+- Botão direito, Excluir: pede confirmação e manda o arquivo ou a pasta para a Lixeira do sistema. Se o arquivo está aberto com alterações não salvas, a confirmação avisa, e a aba fecha sem salvar. A pasta aberta como projeto nunca pode ser excluída por aqui. Em projetos abertos no WSL a Lixeira do Windows não aceita o item, e a IDE avisa em vez de apagar de vez.
+- Copiar, Recortar e Colar no menu do explorador, e Ctrl+V com o foco na árvore: cola na pasta selecionada (ou na raiz, sem seleção). Clique numa pasta a seleciona, e clique numa área vazia limpa a seleção. O item recortado fica esmaecido até colar, e Esc cancela.
+- Nome repetido: a IDE pergunta se deve Substituir ou Manter os dois (cria "nome (2)"), com a caixa "Aplicar a todos" quando há mais itens. Substituir troca a pasta inteira, sem misturar o conteúdo.
+### Mover arrastando
+- Arraste um arquivo ou uma pasta sobre outra pasta para movê-la (Ctrl, ou Option no macOS, copia). Soltar na área vazia leva para a raiz. A aba aberta do arquivo movido acompanha o novo caminho, com o texto e as alterações não salvas, e o Ctrl+S grava no lugar novo.
+### Colar e soltar arquivos do sistema
+- Arquivos copiados no Explorer entram no projeto com Ctrl+V (pastas vão com o conteúdo), e arquivos soltos do Explorer sobre uma pasta da árvore são copiados para ela, com a mesma pergunta de nome repetido. Soltar fora da árvore não faz nada.
+- Ainda não validado em macOS e Linux: colar e soltar arquivos do sistema só foram exercitados no Windows.
+
 ## 1.7.2 · 04/10/2026
 ### Login no terminal WSL
 - O `/login` do Claude Code no terminal WSL voltou a abrir o navegador padrão do Windows. Antes, a IDE mandava o link para o Explorer, que lia os `=` do endereço como separadores e abria uma pasta. Agora o terminal WSL usa um pequeno script da própria IDE, que entrega o link inteiro ao navegador. Nada é instalado na distro, e um `BROWSER` que você já definiu continua valendo. PowerShell e Git Bash não mudaram.
