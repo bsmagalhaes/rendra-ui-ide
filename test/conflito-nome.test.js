@@ -23,7 +23,6 @@ test('"Aplicar a todos" decide os itens que restam com a mesma escolha e acaba a
   f = C.responder(f, C.proximo(f), { choice: 'substituir', marcado: true });
   assert.strictEqual(C.proximo(f), null);
   assert.deepStrictEqual(C.resultado(f).decisoes, { '/o/a': 'manter-ambos', '/o/b': 'substituir', '/o/c': 'substituir' });
-  assert.strictEqual(f.aplicarATodos, 'substituir');
 });
 
 test('Cancelar interrompe os itens sem decisão; as decisões já dadas ficam', () => {

@@ -173,6 +173,8 @@ function criarOperacoes(ctx) {
         if (mesmo(final, full) || mesmo(final, efetiva) || inside0(full, final) || inside0(efetiva, final)) {
           throw falha('Não dá para substituir: o destino é a própria origem ou contém a origem. Use "Manter os dois"');
         }
+        // nem a raiz de uma pasta aberta, nem algo que a contém: o rm recursivo apagaria o projeto de outro workspace
+        for (const r of ctx.raizes()) if (inside0(r, final)) throw falha(MSG_RAIZ);
         substituindo = true;
       }
     }

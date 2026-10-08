@@ -7,7 +7,7 @@
   const ESCOLHAS = new Set(['substituir', 'manter-ambos']);
 
   // conflitos: [{ origem, nome, existente }] como o main devolve
-  const novaFila = conflitos => ({ itens: (conflitos || []).slice(), decisoes: {}, aplicarATodos: null, cancelado: false });
+  const novaFila = conflitos => ({ itens: (conflitos || []).slice(), decisoes: {}, cancelado: false });
 
   // O próximo item que ainda precisa de resposta, ou null (acabou, ou Cancelar)
   const proximo = fila => (fila.cancelado ? null : fila.itens.find(i => !(i.origem in fila.decisoes)) || null);
@@ -19,12 +19,10 @@
   function responder(fila, item, resposta) {
     if (!resposta || resposta.choice === 'cancel' || !ESCOLHAS.has(resposta.choice)) return { ...fila, decisoes: { ...fila.decisoes }, cancelado: true };
     const decisoes = { ...fila.decisoes, [item.origem]: resposta.choice };
-    let aplicarATodos = fila.aplicarATodos;
     if (resposta.marcado) {
-      aplicarATodos = resposta.choice;
       for (const i of fila.itens) if (!(i.origem in decisoes)) decisoes[i.origem] = resposta.choice;
     }
-    return { ...fila, decisoes, aplicarATodos, cancelado: false };
+    return { ...fila, decisoes, cancelado: false };
   }
 
   // Origens com decisão e o que foi cancelado: o que o renderer manda de volta ao main

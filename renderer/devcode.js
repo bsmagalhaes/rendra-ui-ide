@@ -1159,7 +1159,15 @@
     const res = await dev.delete(itemPath);
     if (!res?.ok) { toast(res?.error || 'Não foi possível mover para a Lixeira'); return; }
     fecharAbasDe(itemPath);
-    for (const w of workspaces) for (const d of [...w.expanded]) if (dentroDe(itemPath, d)) w.expanded.delete(d);
+    for (const w of workspaces) {
+      for (const d of [...w.expanded]) if (dentroDe(itemPath, d)) w.expanded.delete(d);
+      if (w.selecionado && dentroDe(itemPath, w.selecionado)) w.selecionado = null;
+    }
+    if (areaInterna) {
+      areaInterna.caminhos = areaInterna.caminhos.filter(p => !dentroDe(itemPath, p));
+      if (!areaInterna.caminhos.length) areaInterna = null;
+      marcarRecorte();
+    }
     await renderTree(ws);
     refreshGit(ws);
   }

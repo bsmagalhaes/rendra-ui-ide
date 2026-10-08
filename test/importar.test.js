@@ -126,3 +126,17 @@ test('importar não seguir links de dentro: o destino ganha o LINK, não o conte
   assert.ok(fs.lstatSync(path.join(raiz, 'dest', 'p', 'ponte')).isSymbolicLink());
   assert.strictEqual(fs.readFileSync(path.join(alvo, 'segredo.txt'), 'utf8'), 'S');
 });
+
+test('importar com substituir recusa o destino que é a raiz de outra pasta aberta; a raiz fica intacta', async () => {
+  const base = pasta(), fora = pasta();
+  escreve(base, { 'sub/f.txt': 'F-RAIZ-B' });
+  escreve(fora, { 'sub/novo.txt': 'N' });
+  const t = montar([base, path.join(base, 'sub')]);
+  const origem = path.join(fora, 'sub');
+  const { id } = await t.call('dev:import-registrar', [origem]);
+  const r = await t.call('dev:import', { id, destino: base, decisoes: { [origem]: 'substituir' } });
+  assert.strictEqual(r.itens[0].ok, false);
+  assert.match(r.itens[0].error, /pasta aberta como projeto/);
+  assert.strictEqual(fs.readFileSync(path.join(base, 'sub', 'f.txt'), 'utf8'), 'F-RAIZ-B');
+  assert.ok(!fs.existsSync(path.join(base, 'sub', 'novo.txt')));
+});

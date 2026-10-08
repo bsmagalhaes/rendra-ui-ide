@@ -287,3 +287,67 @@ test('entradas inválidas: lista vazia, decisão desconhecida e destino que não
   assert.match(r.itens[0].error, /Decisão inválida/);
   assert.strictEqual(fs.readFileSync(path.join(raiz, 'dest', 'a.txt'), 'utf8'), 'V');
 });
+
+test('substituir recusa quando o destino é a raiz de outra pasta aberta ou a contém (copiar e mover); a raiz fica intacta', async () => {
+  const base = pasta();
+  escreve(base, { 'outro/sub/x.txt': 'X-ORIGEM', 'sub/f.txt': 'F-RAIZ-B', 'pai/x/y/z.txt': 'Z', 'pai/x/y/w.txt': 'W' });
+  const sub = path.join(base, 'sub'), outroSub = path.join(base, 'outro', 'sub');
+  const t = montar([base, sub]);
+  for (const modo of ['dev:copy', 'dev:move']) {
+    const r = await t.call(modo, { origens: [outroSub], destino: base, decisoes: { [outroSub]: 'substituir' } });
+    assert.strictEqual(r.itens[0].ok, false, modo);
+    assert.match(r.itens[0].error, /pasta aberta como projeto/);
+    assert.strictEqual(fs.readFileSync(path.join(sub, 'f.txt'), 'utf8'), 'F-RAIZ-B', `${modo}: a raiz de B continua intacta`);
+  }
+  assert.ok(fs.existsSync(path.join(outroSub, 'x.txt')), 'a origem continua no lugar');
+  // destino que CONTÉM uma raiz: a raiz fica dentro de pai/x
+  escreve(base, { 'q/x/novo.txt': 'N' });
+  const t2 = montar([base, path.join(base, 'pai', 'x', 'y')]);
+  const qx = path.join(base, 'q', 'x');
+  const r2 = await t2.call('dev:copy', { origens: [qx], destino: path.join(base, 'pai'), decisoes: { [qx]: 'substituir' } });
+  assert.strictEqual(r2.itens[0].ok, false);
+  assert.strictEqual(fs.readFileSync(path.join(base, 'pai', 'x', 'y', 'z.txt'), 'utf8'), 'Z');
+});
+
+test('copiarLink: sistema que não deixa criar o link deixa o link de fora e avisa no item', async (c) => {
+  const raiz = pasta(), alvo = pasta();
+  escreve(raiz, { 'p/ok.txt': 'ok', 'dest': null });
+  if (!linkDir(alvo, path.join(raiz, 'p', 'ponte'))) { c.skip('sem permissão para criar link'); return; }
+  const eperm = async () => { const e = new Error('EPERM simulado'); e.code = 'EPERM'; throw e; };
+  const t = montar(raiz, { deps: { fsx: { symlink: eperm } } });
+  const r = ok(await t.call('dev:copy', { origens: [path.join(raiz, 'p')], destino: path.join(raiz, 'dest') }));
+  assert.strictEqual(r.itens[0].ok, true);
+  assert.match(r.itens[0].avisos[0], /ponte não foi copiado/);
+  assert.strictEqual(fs.readFileSync(path.join(raiz, 'dest', 'p', 'ok.txt'), 'utf8'), 'ok');
+  assert.ok(!fs.existsSync(path.join(raiz, 'dest', 'p', 'ponte')));
+});
+
+test('EXDEV com um link de topo: o link anda como link e a origem sai', async (c) => {
+  const raiz = pasta(), alvo = pasta();
+  escreve(alvo, { 'dado.txt': 'D' });
+  escreve(raiz, { 'dest': null });
+  if (!linkDir(alvo, path.join(raiz, 'ponte'))) { c.skip('sem permissão para criar link'); return; }
+  const exdev = async () => { const e = new Error('cross-device'); e.code = 'EXDEV'; throw e; };
+  const t = montar(raiz, { deps: { fsx: { rename: exdev } } });
+  ok(await t.call('dev:move', { origens: [path.join(raiz, 'ponte')], destino: path.join(raiz, 'dest') }));
+  assert.ok(!fs.existsSync(path.join(raiz, 'ponte')));
+  assert.ok(fs.lstatSync(path.join(raiz, 'dest', 'ponte')).isSymbolicLink());
+  assert.strictEqual(fs.readFileSync(path.join(alvo, 'dado.txt'), 'utf8'), 'D', 'o alvo não foi tocado');
+});
+
+test('falha ao remover o antigo no substituir: o destino antigo fica, a origem do mover volta e nada temporário sobra', async () => {
+  const raiz = pasta();
+  escreve(raiz, { 'a.txt': 'NOVO', 'dest/a.txt': 'VELHO', 'm.txt': 'M-NOVO', 'dest2/m.txt': 'M-VELHO' });
+  const rmQueFalha = async (p, o) => { if (!path.basename(p).includes('.rendra-')) throw new Error('rm bloqueado'); return fs.promises.rm(p, o); };
+  const t = montar(raiz, { deps: { fsx: { rm: rmQueFalha } } });
+  const a = path.join(raiz, 'a.txt'), m = path.join(raiz, 'm.txt');
+  let r = await t.call('dev:copy', { origens: [a], destino: path.join(raiz, 'dest'), decisoes: { [a]: 'substituir' } });
+  assert.match(r.itens[0].error, /Não foi possível substituir/);
+  assert.strictEqual(fs.readFileSync(path.join(raiz, 'dest', 'a.txt'), 'utf8'), 'VELHO');
+  r = await t.call('dev:move', { origens: [m], destino: path.join(raiz, 'dest2'), decisoes: { [m]: 'substituir' } });
+  assert.match(r.itens[0].error, /Não foi possível substituir/);
+  assert.strictEqual(fs.readFileSync(m, 'utf8'), 'M-NOVO', 'a origem voltou ao lugar');
+  assert.strictEqual(fs.readFileSync(path.join(raiz, 'dest2', 'm.txt'), 'utf8'), 'M-VELHO');
+  assert.deepStrictEqual(fs.readdirSync(path.join(raiz, 'dest')).sort(), ['a.txt']);
+  assert.deepStrictEqual(fs.readdirSync(path.join(raiz, 'dest2')).sort(), ['m.txt']);
+});
