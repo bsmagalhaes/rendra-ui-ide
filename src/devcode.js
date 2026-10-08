@@ -358,7 +358,7 @@ function registerDevCode({ ipcMain, dialog, store, getWindow, userData, deps = {
 
   // Excluir (Lixeira), copiar, mover e importar: src/arquivos-ops.js. shell só entra na hora de excluir (deps.trashItem nos testes).
   const ops = criarOperacoes({
-    guard, realDentro, inside0,
+    guard, realDentro, inside0, insensivel: IS_WIN || IS_MAC, fsx: deps.fsx,
     raizes: () => roots,
     // e2e: RENDRA_E2E_LIXEIRA troca a Lixeira do sistema por uma pasta (a prova real do trashItem está nos spikes; o teste
     // não deve encher a Lixeira de quem usa a máquina)
@@ -367,6 +367,19 @@ function registerDevCode({ ipcMain, dialog, store, getWindow, userData, deps = {
       : p => require('electron').shell.trashItem(p)),
   });
   ipcMain.handle('dev:delete', (_e, item) => ops.excluir(item));
+  // copiar/mover dentro das pastas abertas: { origens, destino, decisoes? } -> { ok, destino, itens: [{ origem, ok, destino } | { origem, conflito, existente } | { origem, ok: false, error }] }
+  ipcMain.handle('dev:copy', (_e, args) => ops.copiar(args));
+  ipcMain.handle('dev:move', (_e, args) => ops.mover(args));
+  // importação do sistema: a lista é registrada pelo preload (webUtils) e referida só por id
+  ipcMain.handle('dev:import-registrar', (_e, caminhos) => ops.registrar(caminhos));
+  ipcMain.handle('dev:import', (_e, args) => ops.importar(args));
+  ipcMain.handle('dev:import-cancelar', (_e, id) => ops.cancelarImportacao(id));
+  // clipboard do sistema: só "há arquivos?" e a assinatura (quem vence no Ctrl+V); os caminhos vêm do evento paste, pelo preload
+  const clipboardReal = () => deps.clipboard || require('electron').clipboard;
+  ipcMain.handle('dev:clipboard-arquivos', () => require('./clip-arquivos').temArquivos(clipboardReal()));
+  ipcMain.handle('dev:clipboard-assinatura', () => require('./clip-arquivos').assinatura(clipboardReal()));
+  // "Colar" do menu: dispara o mesmo evento paste que o Ctrl+V (webContents.paste), então os arquivos do sistema chegam pelo mesmo caminho
+  ipcMain.handle('dev:colar', () => { const w = getWindow(); if (!w || w.isDestroyed()) return false; w.webContents.paste(); return true; });
 
   const send = (channel, payload) => {
     const win = getWindow();

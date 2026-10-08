@@ -6,11 +6,14 @@
   const NOVO = [{ k: 'file', rotulo: 'Novo arquivo' }, { k: 'dir', rotulo: 'Nova pasta' }];
 
   const EXCLUIR = { k: 'excluir', rotulo: 'Excluir' };
+  const COPIAR_RECORTAR = [{ k: 'copiar', rotulo: 'Copiar' }, { k: 'recortar', rotulo: 'Recortar' }];
+  const COLAR = { k: 'colar', rotulo: 'Colar' };
 
-  function itensDoMenu(alvo) {
-    if (alvo === 'arquivo') return [{ k: 'visualizar', rotulo: 'Visualizar' }, { sep: true }, ...NOVO, { sep: true }, EXCLUIR];
-    if (alvo === 'pasta') return [...NOVO, { sep: true }, EXCLUIR];
-    return [...NOVO]; // a área vazia é a raiz do projeto: nunca excluída
+  // podeColar: há o que colar (uma ação interna pendente do mesmo projeto, ou arquivos copiados no sistema)
+  function itensDoMenu(alvo, { podeColar = false } = {}) {
+    if (alvo === 'arquivo') return [{ k: 'visualizar', rotulo: 'Visualizar' }, { sep: true }, ...COPIAR_RECORTAR, { sep: true }, ...NOVO, { sep: true }, EXCLUIR];
+    if (alvo === 'pasta') return [...NOVO, { sep: true }, ...COPIAR_RECORTAR, ...(podeColar ? [COLAR] : []), { sep: true }, EXCLUIR];
+    return [...NOVO, ...(podeColar ? [{ sep: true }, COLAR] : [])]; // a área vazia é a raiz do projeto: nunca excluída nem copiada
   }
 
   const api = { itensDoMenu };

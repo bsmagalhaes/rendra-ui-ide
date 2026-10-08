@@ -164,9 +164,11 @@ async function conectar(porta) {
   if (!pagina) throw new Error('o app não abriu');
   const ws = new WebSocket(pagina.webSocketDebuggerUrl);
   const pendentes = {};
+  const eventos = []; // eventos do CDP (Input.dragIntercepted...), para os cenários de arraste
   let id = 0;
   ws.onmessage = e => {
     const m = JSON.parse(e.data);
+    if (m.method) { eventos.push(m); if (eventos.length > 500) eventos.shift(); return; }
     if (!pendentes[m.id]) return;
     if (m.error) pendentes[m.id].reject(new Error(m.error.message)); else pendentes[m.id].resolve(m.result);
     delete pendentes[m.id];
@@ -181,7 +183,7 @@ async function conectar(porta) {
     if (r.exceptionDetails) throw new Error(`${r.exceptionDetails.text}: ${r.exceptionDetails.exception?.description || ''}`.slice(0, 400));
     return r.result?.value;
   };
-  return { ws, send, ev };
+  return { ws, send, ev, eventos };
 }
 
 async function abrir(sb, { w = 1920, h = 1080, semTerminal = false } = {}) {
@@ -191,8 +193,8 @@ async function abrir(sb, { w = 1920, h = 1080, semTerminal = false } = {}) {
   const env = { ...process.env, RENDRA_E2E_HIDDEN: '1', RENDRA_DATA_DIR: sb.data, RENDRA_HOME: sb.home, CODEX_HOME: path.join(sb.home, '.codex'), RENDRA_E2E_LIXEIRA: sb.lixeira };
   delete env.ELECTRON_RUN_AS_NODE;
   const proc = spawn(electron, [ROOT, `--remote-debugging-port=${porta}`], { cwd: ROOT, env, stdio: 'ignore' });
-  const { ws, send, ev } = await conectar(porta);
-  const app = { sb, proc, ws, send, ev, w, h, semTerminal, porta };
+  const { ws, send, ev, eventos } = await conectar(porta);
+  const app = { sb, proc, ws, send, ev, w, h, semTerminal, porta, eventos };
   sb.appAtual = app;
 
   app.tamanho = async (nw, nh) => {
@@ -1081,7 +1083,7 @@ CENARIOS['explorador-criar'] = async () => {
     await botaoDireito(c.x, c.y);
     await app.espera(`!!document.querySelector('.dev-ctx-menu')`, 5000, 'menu de contexto');
     const itens = await menuItens();
-    afirma(JSON.stringify(itens) === JSON.stringify(['Novo arquivo', 'Nova pasta', 'Excluir']), `menu da pasta: ${JSON.stringify(itens)}`);
+    afirma(JSON.stringify(itens) === JSON.stringify(['Novo arquivo', 'Nova pasta', 'Copiar', 'Recortar', 'Excluir']), `menu da pasta: ${JSON.stringify(itens)}`);
     await escolhe('Novo arquivo');
     afirma(await app.ev(`document.activeElement?.classList.contains('dev-novo-input')`), 'o campo de nome está com o foco');
     await app.foto('explorador-campo-nome');
@@ -1096,7 +1098,7 @@ CENARIOS['explorador-criar'] = async () => {
     await botaoDireito(c.x, c.y);
     await app.espera(`!!document.querySelector('.dev-ctx-menu')`, 5000, 'menu de contexto');
     const itensArquivo = await menuItens();
-    afirma(JSON.stringify(itensArquivo) === JSON.stringify(['Visualizar', 'Novo arquivo', 'Nova pasta', 'Excluir']), `menu do arquivo: ${JSON.stringify(itensArquivo)}`);
+    afirma(JSON.stringify(itensArquivo) === JSON.stringify(['Visualizar', 'Copiar', 'Recortar', 'Novo arquivo', 'Nova pasta', 'Excluir']), `menu do arquivo: ${JSON.stringify(itensArquivo)}`);
     await escolhe('Nova pasta');
     await digita('pasta1');
     await app.espera(`[...document.querySelectorAll('.ws.active .dev-node.dir .dev-node-name')].some(e => e.textContent === 'pasta1')`, 15000, 'pasta1 na árvore');
@@ -1580,6 +1582,292 @@ CENARIOS['excluir'] = async () => {
     afirma(!noDisco('sub'), 'a pasta não volta com o Ctrl+S');
     afirma(await app.ev(`!document.querySelector('.ws.active .dev-tab.dirty')`) && await app.ev(`!document.querySelector('.ws.active .dev-node.st-E')`), 'nenhuma marca de alteração sobrou na árvore');
     await app.foto('excluir-final');
+  });
+};
+
+// ── Ferramentas do explorador (cenários de copiar, mover, arrastar e colar) ──
+function ferramentasArvore(app, sb) {
+  const t = {};
+  // nome: 'a.txt' (na raiz do projeto) ou 'dest/a.txt' (caminho relativo ao projeto); sem achar por caminho, o primeiro com esse nome
+  t.abs = nome => path.join(sb.projeto, ...nome.split('/'));
+  t.linha = nome => `(() => { const alvo = ${JSON.stringify(t.abs(nome).toLowerCase())}; const todos = [...document.querySelectorAll('.ws.active .dev-node')]; return todos.find(e => e.dataset.path.toLowerCase() === alvo) || todos.find(e => e.querySelector('.dev-node-name')?.textContent === ${JSON.stringify(nome)}); })()`;
+  t.centro = nome => app.ev(`(() => { const n = ${t.linha(nome)}; if (!n) return null; n.scrollIntoView({ block: 'nearest' }); const r = n.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; })()`);
+  t.areaVazia = async () => { const c = await app.caixa('.ws.active .dev-tree'); return { x: Math.round(c.x + c.w / 2), y: Math.round(c.b - 6) }; };
+  t.mouse = async (x, y, tipo, botao = 'left') => app.send('Input.dispatchMouseEvent', { type: tipo, x, y, button: botao, buttons: tipo === 'mousePressed' ? (botao === 'left' ? 1 : 2) : 0, clickCount: 1 });
+  t.cliqueReal = async nome => { const c = nome ? await t.centro(nome) : await t.areaVazia(); await t.mouse(c.x, c.y, 'mouseMoved'); await t.mouse(c.x, c.y, 'mousePressed'); await t.mouse(c.x, c.y, 'mouseReleased'); await sleep(250); };
+  t.botaoDireito = async nome => { const c = nome ? await t.centro(nome) : await t.areaVazia(); await t.mouse(c.x, c.y, 'mouseMoved'); await t.mouse(c.x, c.y, 'mousePressed', 'right'); await t.mouse(c.x, c.y, 'mouseReleased', 'right'); await app.espera(`!!document.querySelector('.dev-ctx-menu')`, 5000, 'menu de contexto'); };
+  t.itensDoMenu = () => app.ev(`[...document.querySelectorAll('.dev-ctx-menu button')].map(b => b.textContent)`);
+  t.escolheNoMenu = async rotulo => { await app.ev(`[...document.querySelectorAll('.dev-ctx-menu button')].find(b => b.textContent === ${JSON.stringify(rotulo)}).click()`); await sleep(300); };
+  t.menu = async (nome, rotulo) => { await t.botaoDireito(nome); await t.escolheNoMenu(rotulo); };
+  t.nomesDaArvore = () => app.ev(`[...document.querySelectorAll('.ws.active .dev-node .dev-node-name')].map(e => e.textContent)`);
+  t.classes = nome => app.ev(`(() => { const n = ${t.linha(nome)}; return n ? n.className : null; })()`);
+  t.dialogo = () => app.ev(`({ visivel: document.getElementById('save-overlay').classList.contains('visible'), titulo: document.getElementById('save-title').textContent, corpo: document.getElementById('save-body').textContent, botoes: [...document.querySelectorAll('#save-actions button')].map(b => b.textContent), caixa: !!document.querySelector('#save-body .save-check input') })`);
+  t.esperaDialogo = () => app.espera(`document.getElementById('save-overlay').classList.contains('visible')`, 8000, 'caixa de diálogo');
+  t.responde = async (escolha, { marcar = false } = {}) => {
+    if (marcar) await app.ev(`document.querySelector('#save-body .save-check input').click()`);
+    await app.ev(`document.querySelector('#save-actions [data-choice=${JSON.stringify(escolha)}]').click()`);
+    await sleep(700);
+  };
+  t.tecla = async (key, { ctrl = false, code } = {}) => {
+    const base = { key, code: code || `Key${key.toUpperCase()}`, windowsVirtualKeyCode: key.length === 1 ? key.toUpperCase().charCodeAt(0) : ({ Escape: 27, Enter: 13 }[key] || 0), modifiers: ctrl ? 2 : 0 };
+    await app.send('Input.dispatchKeyEvent', { type: 'keyDown', ...base });
+    await app.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+    await sleep(250);
+  };
+  t.focaArvore = () => app.ev(`document.querySelector('.ws.active .dev-tree').focus()`);
+  t.noDisco = (...p) => fs.existsSync(path.join(sb.projeto, ...p));
+  t.le = (...p) => fs.readFileSync(path.join(sb.projeto, ...p), 'utf8');
+  t.espera = async (cond, ms = 10000) => { const fim = Date.now() + ms; while (Date.now() < fim) { if (await cond()) return true; await sleep(150); } return false; };
+  // Arraste nativo por CDP: o mouse desce na origem e anda até o destino, o Chromium inicia o arraste, o CDP o intercepta e
+  // reenvia dragEnter/dragOver/drop. opts: ctrl (copia), noMeio (função entre o dragOver e o drop), soltarEm {x,y}.
+  t.arrasta = async (de, para, { ctrl = false, noMeio = null, soltarEm = null } = {}) => {
+    const o = await t.centro(de);
+    const alvo = soltarEm || (para ? await t.centro(para) : await t.areaVazia());
+    const mod = ctrl ? 2 : 0;
+    app.eventos.length = 0;
+    await app.send('Input.setInterceptDrags', { enabled: true });
+    await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: o.x, y: o.y });
+    await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: o.x, y: o.y, button: 'left', buttons: 1, clickCount: 1 });
+    let dados = null;
+    for (let i = 1; i <= 8 && !dados; i++) {
+      await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(o.x + (alvo.x - o.x) * i / 8), y: Math.round(o.y + (alvo.y - o.y) * i / 8), button: 'left', buttons: 1 });
+      await sleep(40);
+      dados = app.eventos.find(e => e.method === 'Input.dragIntercepted')?.params.data || null;
+    }
+    for (let i = 0; i < 20 && !dados; i++) { await sleep(50); dados = app.eventos.find(e => e.method === 'Input.dragIntercepted')?.params.data || null; }
+    if (!dados) { await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: alvo.x, y: alvo.y, button: 'left', buttons: 0, clickCount: 1 }); await app.send('Input.setInterceptDrags', { enabled: false }); return { iniciou: false }; }
+    await app.send('Input.dispatchDragEvent', { type: 'dragEnter', x: alvo.x, y: alvo.y, data: dados, modifiers: mod });
+    for (let k = 0; k < 2; k++) { await app.send('Input.dispatchDragEvent', { type: 'dragOver', x: alvo.x, y: alvo.y, data: dados, modifiers: mod }); await sleep(30); }
+    const marcas = await app.ev(`({ dentro: [...document.querySelectorAll('.drop-dentro')].map(n => n.dataset.path), raiz: !!document.querySelector('.dev-tree.drop-raiz') })`);
+    if (noMeio) {
+      await noMeio();
+      for (let k = 0; k < 2; k++) { await app.send('Input.dispatchDragEvent', { type: 'dragOver', x: alvo.x, y: alvo.y, data: dados, modifiers: mod }); await sleep(30); }
+    }
+    await app.send('Input.dispatchDragEvent', { type: 'drop', x: alvo.x, y: alvo.y, data: dados, modifiers: mod });
+    await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: alvo.x, y: alvo.y, button: 'left', buttons: 0, clickCount: 1 });
+    await app.send('Input.setInterceptDrags', { enabled: false });
+    await sleep(700);
+    return { iniciou: true, marcas };
+  };
+  return t;
+}
+
+// Copiar, Recortar, Colar e mover (Fase 4): menu, destino pela seleção, nome repetido, abas que seguem o caminho, arraste.
+CENARIOS['copiar-mover'] = async () => {
+  const arquivos = { 'dest/.keep': '', 'pasta2/x.txt': 'xis\n', 'pasta2/fundo/y.txt': 'ipsilon\n', 'extra.txt': 'extra\n', 'extra2.txt': 'extra dois\n' };
+  await comApp({ semTerminal: true, workspaces: [{ name: 'demo', cols: 1 }], arquivos }, async (app, sb) => {
+    const T = ferramentasArvore(app, sb);
+    await app.espera(`document.querySelectorAll('.ws.active .dev-node').length >= 7`, 20000, 'árvore carregada');
+
+    // 1) menus
+    await T.botaoDireito('a.txt');
+    let itens = await T.itensDoMenu();
+    afirma(JSON.stringify(itens) === JSON.stringify(['Visualizar', 'Copiar', 'Recortar', 'Novo arquivo', 'Nova pasta', 'Excluir']), `menu do arquivo: ${JSON.stringify(itens)}`);
+    await app.tecla('Escape'); await sleep(200);
+    await T.botaoDireito('dest');
+    itens = await T.itensDoMenu();
+    afirma(JSON.stringify(itens) === JSON.stringify(['Novo arquivo', 'Nova pasta', 'Copiar', 'Recortar', 'Excluir']), `menu da pasta sem nada para colar: ${JSON.stringify(itens)}`);
+    await app.tecla('Escape'); await sleep(200);
+
+    // 2) copiar a.txt e colar em dest pelo menu: a origem fica, o destino ganha, a pasta abre e o item é revelado
+    await T.menu('a.txt', 'Copiar');
+    await T.botaoDireito('dest');
+    itens = await T.itensDoMenu();
+    afirma(itens.includes('Colar'), `depois de Copiar a pasta ganha Colar: ${JSON.stringify(itens)}`);
+    await app.foto('copiar-mover-menu');
+    await T.escolheNoMenu('Colar');
+    await T.espera(async () => T.noDisco('dest', 'a.txt'));
+    afirma(T.noDisco('a.txt') && T.le('dest', 'a.txt') === 'primeiro arquivo\nlinha dois\n', 'copiar: a origem ficou e dest/a.txt tem o mesmo conteúdo');
+    afirma((await T.nomesDaArvore()).filter(n => n === 'a.txt').length === 2, 'a árvore mostra os dois a.txt (a pasta dest abriu)');
+    afirma(await app.ev(`!!document.querySelector('.ws.active .dev-node.revelado, .ws.active .dev-node.file[data-path$="a.txt"]')`), 'o item colado aparece na árvore');
+
+    // 3) recortar b.txt: esmaecido; Esc cancela; recortar de novo e colar na raiz de pasta2
+    await T.menu('b.txt', 'Recortar');
+    afirma((await T.classes('b.txt')).includes('recortado'), 'b.txt fica esmaecido (.recortado)');
+    afirma(await app.ev(`parseFloat(getComputedStyle([...document.querySelectorAll('.ws.active .dev-node')].find(n => n.dataset.path.endsWith('b.txt'))).opacity) < 0.6`), 'o esmaecimento é visível (opacidade)');
+    await app.foto('copiar-mover-recortado');
+    await T.cliqueReal('pasta2'); // foco na árvore; clique em pasta também a seleciona
+    await T.tecla('Escape');
+    afirma(!(await T.classes('b.txt')).includes('recortado'), 'Esc com o foco na árvore cancela o recorte');
+    await T.menu('b.txt', 'Recortar');
+    await T.botaoDireito('pasta2');
+    await T.escolheNoMenu('Colar');
+    await T.espera(async () => T.noDisco('pasta2', 'b.txt'));
+    afirma(!T.noDisco('b.txt') && T.le('pasta2', 'b.txt') === 'segundo arquivo\n', 'recortar e colar: b.txt saiu da raiz e está em pasta2');
+    afirma(!(await app.ev(`!!document.querySelector('.ws.active .dev-node.recortado')`)), 'nada continua esmaecido depois de colar');
+
+    // 4) nome repetido: a caixa de decisão (Manter os dois, depois Substituir, depois Cancelar)
+    await T.menu('a.txt', 'Copiar');
+    await T.botaoDireito('dest');
+    await T.escolheNoMenu('Colar');
+    await T.esperaDialogo();
+    let d = await T.dialogo();
+    afirma(d.titulo === '"a.txt" já existe nesta pasta' && d.corpo.startsWith('Substituir o que está lá ou manter os dois?') && d.botoes.join('|') === 'Cancelar|Substituir|Manter os dois' && !d.caixa, `diálogo do nome repetido: ${JSON.stringify(d)}`);
+    await app.foto('copiar-mover-conflito');
+    await T.responde('manter-ambos');
+    afirma(T.noDisco('dest', 'a (2).txt') && T.le('dest', 'a.txt') === 'primeiro arquivo\nlinha dois\n', 'Manter os dois: dest/a (2).txt criado e dest/a.txt intacto');
+    fs.writeFileSync(path.join(sb.projeto, 'dest', 'a.txt'), 'VELHO DO DESTINO\n');
+    await T.menu('a.txt', 'Copiar');
+    await T.botaoDireito('dest');
+    await T.escolheNoMenu('Colar');
+    await T.esperaDialogo();
+    await T.responde('cancel');
+    afirma(T.le('dest', 'a.txt') === 'VELHO DO DESTINO\n', 'Cancelar não altera nada');
+    await T.botaoDireito('dest');
+    await T.escolheNoMenu('Colar');
+    await T.esperaDialogo();
+    await T.responde('substituir');
+    afirma(T.le('dest', 'a.txt') === 'primeiro arquivo\nlinha dois\n', 'Substituir troca o arquivo do destino');
+
+    // 5) Substituir um destino aberto e alterado: a caixa avisa e a aba dele fecha sem salvar (o Ctrl+S não traz o texto velho de volta)
+    await app.ev(`${T.linha('dest/a.txt')}.click()`);
+    await app.espera(`document.querySelector('.ws.active .dev-tab.active .dev-tab-name')?.textContent === 'a.txt'`, 10000, 'dest/a.txt aberto');
+    await app.ev(`document.querySelector('.ws.active .monaco-editor textarea').focus()`);
+    await app.digita('SUJO ');
+    await app.espera(`!!document.querySelector('.ws.active .dev-tab.dirty')`, 5000, 'aba alterada');
+    await T.menu('a.txt', 'Copiar');
+    await T.botaoDireito('dest');
+    await T.escolheNoMenu('Colar');
+    await T.esperaDialogo();
+    d = await T.dialogo();
+    afirma(d.corpo.includes('O arquivo aberto tem alterações não salvas, que serão perdidas se você substituir.'), `a caixa avisa do destino aberto e alterado: "${d.corpo}"`);
+    await T.responde('substituir');
+    afirma(await app.ev(`![...document.querySelectorAll('.ws.active .dev-tab .dev-tab-name')].some(e => e.textContent === 'a.txt')`), 'a aba do destino substituído fechou');
+    await app.tecla('s', { ctrl: true });
+    await sleep(500);
+    afirma(T.le('dest', 'a.txt') === 'primeiro arquivo\nlinha dois\n', 'o texto velho da aba não foi gravado por cima do colado');
+
+    // 6) a seleção sobrevive ao watcher
+    await T.cliqueReal('pasta2');
+    afirma((await T.classes('pasta2')).includes('selecionado'), 'clicar na pasta a seleciona');
+    fs.writeFileSync(path.join(sb.projeto, 'criado-por-fora.txt'), 'x');
+    await T.espera(async () => (await T.nomesDaArvore()).includes('criado-por-fora.txt'), 8000);
+    afirma((await T.classes('pasta2')).includes('selecionado'), 'a seleção continua na mesma pasta depois que o watcher refez a árvore');
+    await app.foto('copiar-mover-selecao');
+
+    // 7) Ctrl+V pelo teclado: na pasta selecionada; sem seleção, na raiz
+    await T.menu('extra.txt', 'Copiar');
+    await T.cliqueReal('pasta2');
+    await T.tecla('v', { ctrl: true });
+    await T.espera(async () => T.noDisco('pasta2', 'extra.txt'));
+    afirma(T.noDisco('pasta2', 'extra.txt') && T.noDisco('extra.txt'), 'Ctrl+V com a pasta selecionada cola nela (cópia)');
+    await T.menu('extra2.txt', 'Copiar');
+    await T.cliqueReal(null); // área vazia: limpa a seleção
+    afirma(!(await app.ev(`!!document.querySelector('.ws.active .dev-node.selecionado')`)), 'clicar na área vazia limpa a seleção');
+    await T.tecla('v', { ctrl: true });
+    await T.espera(async () => T.noDisco('extra2 (2).txt'));
+    afirma(T.noDisco('extra2 (2).txt') === false, 'sem seleção o destino é a raiz: extra2.txt já está lá, então a caixa pergunta');
+    await T.esperaDialogo();
+    await T.responde('manter-ambos');
+    afirma(T.noDisco('extra2 (2).txt') && T.le('extra2 (2).txt') === 'extra dois\n', 'sem seleção o Ctrl+V cola na raiz (Manter os dois: extra2 (2).txt)');
+  });
+};
+
+// Mover arrastando e abas que seguem o caminho novo (Fase 4)
+CENARIOS['mover-arrastar'] = async () => {
+  const arquivos = { 'dest/.keep': '', 'pasta2/x.txt': 'xis\n', 'pasta2/fundo/y.txt': 'ipsilon\n', 'extra.txt': 'extra\n', 'foto.png': midia('teste.png') };
+  await comApp({ semTerminal: false, workspaces: [{ name: 'demo', cols: 1 }], arquivos }, async (app, sb) => {
+    let T = ferramentasArvore(app, sb);
+    await app.espera(`document.querySelectorAll('.ws.active .dev-node').length >= 7`, 20000, 'árvore carregada');
+    const abas = () => app.ev(`[...document.querySelectorAll('.ws.active .dev-tab')].map(t => ({ nome: t.querySelector('.dev-tab-name').textContent, caminho: t.dataset.path, suja: t.classList.contains('dirty'), ativa: t.classList.contains('active') }))`);
+    const abrir = async rel => { await app.ev(`${T.linha(rel)}.click()`); await app.espera(`document.querySelector('.ws.active .dev-tab.active .dev-tab-name')?.textContent === ${JSON.stringify(path.basename(rel))}`, 15000, `aba ${rel}`); await sleep(300); };
+
+    // 1) arquivo sujo aberto dentro de uma pasta movida: a aba segue, o texto não salvo fica, o Ctrl+S grava no lugar NOVO
+    await app.ev(`${T.linha('sub')}.click()`);
+    await app.espera(`!!(${T.linha('sub/c.txt')})`, 10000, 'sub expandida');
+    await abrir('sub/c.txt');
+    await app.ev(`document.querySelector('.ws.active .monaco-editor textarea').focus()`);
+    await app.digita('SUJO-');
+    await app.espera(`!!document.querySelector('.ws.active .dev-tab.dirty')`, 5000, 'c.txt alterado');
+    let r = await T.arrasta('sub', 'dest');
+    afirma(r.iniciou && r.marcas.dentro.some(p => p.endsWith('dest')), `o arraste destaca a pasta de destino (${JSON.stringify(r.marcas)})`);
+    await T.espera(async () => T.noDisco('dest', 'sub', 'c.txt'));
+    afirma(T.noDisco('dest', 'sub', 'c.txt') && !T.noDisco('sub'), 'a pasta sub foi movida para dest (disco)');
+    let a = (await abas()).find(t => t.nome === 'c.txt');
+    afirma(!!a && a.caminho === T.abs('dest/sub/c.txt') && a.suja && a.ativa, `a aba c.txt segue o caminho novo e continua alterada (${JSON.stringify(a)})`);
+    afirma(await app.ev(`window.monaco.editor.getModels().filter(m => m.uri.path.endsWith('/c.txt')).map(m => m.getValue()).join('|')`) === 'SUJO-terceiro arquivo\n', 'um modelo só, com o texto não salvo');
+    afirma(await app.ev(`window.monaco.editor.getModels().filter(m => m.uri.path.endsWith('/c.txt')).length`) === 1, 'sem dois modelos do mesmo arquivo');
+    await app.ev(`document.querySelector('.ws.active .monaco-editor textarea').focus()`);
+    await app.tecla('s', { ctrl: true });
+    await sleep(600);
+    afirma(T.le('dest', 'sub', 'c.txt') === 'SUJO-terceiro arquivo\n' && !T.noDisco('sub'), 'Ctrl+S grava no caminho novo e o antigo não é recriado');
+    afirma(await app.ev(`!document.querySelector('.ws.active .dev-tab.dirty')`), 'depois de salvar a aba fica limpa');
+
+    // 2) aba de mídia segue o arquivo movido
+    await abrir('foto.png');
+    await app.espera(`document.querySelector('.ws.active .dev-viewer:not([hidden]) img')?.naturalWidth > 0`, 10000, 'imagem aberta');
+    r = await T.arrasta('foto.png', 'pasta2');
+    await T.espera(async () => T.noDisco('pasta2', 'foto.png'));
+    afirma(T.noDisco('pasta2', 'foto.png') && !T.noDisco('foto.png'), 'foto.png movida para pasta2');
+    await app.espera(`document.querySelector('.ws.active .dev-viewer:not([hidden]) img')?.naturalWidth > 0`, 10000, 'imagem recarregada do lugar novo');
+    a = (await abas()).find(t => t.nome === 'foto.png');
+    afirma(!!a && a.caminho === T.abs('pasta2/foto.png') && a.ativa, `a aba de imagem segue o caminho novo (${JSON.stringify(a)})`);
+    afirma(await app.ev(`decodeURIComponent(document.querySelector('.ws.active .dev-viewer:not([hidden]) img').src).includes('pasta2')`), 'a imagem vem do endereço novo');
+
+    // 3) Ctrl+arrastar copia: a origem fica
+    r = await T.arrasta('extra.txt', 'dest', { ctrl: true });
+    await T.espera(async () => T.noDisco('dest', 'extra.txt'));
+    afirma(T.noDisco('dest', 'extra.txt') && T.noDisco('extra.txt'), 'Ctrl+arrastar copia (a origem permanece)');
+
+    // 4) soltar uma pasta dentro de si mesma é recusado; mover para a própria pasta é recusado
+    const antes = JSON.stringify(fs.readdirSync(sb.projeto).sort());
+    r = await T.arrasta('pasta2', 'pasta2/fundo');
+    afirma(r.iniciou && r.marcas.dentro.length === 0 && !r.marcas.raiz, `o destino inválido não é destacado (${JSON.stringify(r.marcas)})`);
+    afirma(JSON.stringify(fs.readdirSync(sb.projeto).sort()) === antes && T.noDisco('pasta2', 'fundo', 'y.txt') && !T.noDisco('pasta2', 'fundo', 'pasta2'), 'pasta2 não entrou em si mesma');
+    await app.ev(`${T.linha('pasta2/fundo')}.click()`);
+    await app.espera(`!!(${T.linha('pasta2/fundo/y.txt')})`, 10000, 'fundo expandida');
+    r = await T.arrasta('pasta2/x.txt', 'pasta2/fundo/y.txt'); // destino = pasta fundo (a pasta do arquivo alvo): é um mover válido
+    await T.espera(async () => T.noDisco('pasta2', 'fundo', 'x.txt'));
+    afirma(T.noDisco('pasta2', 'fundo', 'x.txt'), 'soltar sobre um arquivo vale a pasta dele');
+    r = await T.arrasta('pasta2/fundo/x.txt', 'pasta2/fundo/y.txt');
+    afirma(r.iniciou && r.marcas.dentro.length === 0 && T.noDisco('pasta2', 'fundo', 'x.txt'), 'mover para a própria pasta não faz nada');
+
+    // 5) soltar na área vazia move para a raiz
+    r = await T.arrasta('pasta2/fundo/y.txt', null);
+    await T.espera(async () => T.noDisco('y.txt'));
+    afirma(T.noDisco('y.txt') && !T.noDisco('pasta2', 'fundo', 'y.txt') && r.marcas.raiz, 'soltar na área vazia move para a raiz (e destaca a árvore)');
+
+    // 6) o watcher refaz a árvore no meio do arraste: o drop ainda acerta o destino
+    r = await T.arrasta('y.txt', 'dest', { noMeio: async () => { fs.writeFileSync(path.join(sb.projeto, 'surgiu-no-meio.txt'), 'x'); await T.espera(async () => (await T.nomesDaArvore()).includes('surgiu-no-meio.txt'), 8000); } });
+    await T.espera(async () => T.noDisco('dest', 'y.txt'));
+    afirma(T.noDisco('dest', 'y.txt') && !T.noDisco('y.txt'), 'o drop acerta mesmo com a árvore refeita no meio do arraste');
+    await app.foto('mover-arrastar-final');
+
+    // 7) nome repetido ao arrastar: a mesma caixa
+    fs.writeFileSync(path.join(sb.projeto, 'dest', 'surgiu-no-meio.txt'), 'DESTINO');
+    r = await T.arrasta('surgiu-no-meio.txt', 'dest');
+    await T.esperaDialogo();
+    const d = await T.dialogo();
+    afirma(d.titulo === '"surgiu-no-meio.txt" já existe nesta pasta', `arrastar sobre nome repetido pergunta: ${d.titulo}`);
+    await T.responde('manter-ambos');
+    afirma(T.noDisco('dest', 'surgiu-no-meio (2).txt') && T.le('dest', 'surgiu-no-meio.txt') === 'DESTINO' && !T.noDisco('surgiu-no-meio.txt'), 'Manter os dois ao mover: nome (2) e a origem saiu da raiz');
+
+    // 8) a configuração guarda o caminho novo e a aba volta nele depois de reiniciar
+    await abrir('dest/sub/c.txt');
+    await sleep(700);
+    const tabs = lerConfig(sb).devcode.workspaces.list[0].groups[0].tabs;
+    afirma(tabs.includes(T.abs('dest/sub/c.txt')) && !tabs.includes(T.abs('sub/c.txt')) && tabs.includes(T.abs('pasta2/foto.png')), `a configuração tem os caminhos novos (${tabs.map(p => path.relative(sb.projeto, p)).join(', ')})`);
+    const app2 = await app.reiniciar();
+    await app2.espera(`[...document.querySelectorAll('.ws.active .dev-tab')].some(t => t.dataset.path === ${JSON.stringify(T.abs('dest/sub/c.txt'))})`, 30000, 'aba restaurada no caminho novo');
+    afirma(true, 'depois de reiniciar, a aba c.txt volta no caminho novo');
+    T = ferramentasArvore(app2, sb);
+
+    // 9) Esc com o foco no terminal não cancela o recorte (e chega ao terminal)
+    await abrirTerminal(app2);
+    await app2.espera(`!!(${T.linha('dest')})`, 10000, 'árvore');
+    await app2.ev(`${T.linha('dest')}.click()`);
+    await app2.espera(`!!(${T.linha('dest/extra.txt')})`, 10000, 'dest expandida');
+    await T.menu('dest/extra.txt', 'Recortar');
+    afirma((await T.classes('dest/extra.txt')).includes('recortado'), 'recorte pendente');
+    await app2.ev(`window.__esc = []; document.addEventListener('keydown', e => { if (e.key === 'Escape') window.__esc.push({ alvo: e.target.closest('.xterm') ? 'xterm' : e.target.className, antes: e.defaultPrevented }); }, true); document.addEventListener('keydown', e => { if (e.key === 'Escape') window.__esc.push({ depois: e.defaultPrevented }); });`);
+    await app2.ev(`document.querySelector('.ws.active .xterm-helper-textarea').focus()`);
+    await T.tecla('Escape');
+    const escs = await app2.ev('window.__esc');
+    afirma(escs.some(x => x.alvo === 'xterm'), `o Esc foi entregue ao terminal (${JSON.stringify(escs)})`);
+    afirma((await T.classes('dest/extra.txt')).includes('recortado'), 'o Esc no terminal não cancelou o recorte');
+    await T.focaArvore();
+    await T.tecla('Escape');
+    afirma(!(await T.classes('dest/extra.txt')).includes('recortado'), 'o Esc na árvore cancela');
   });
 };
 

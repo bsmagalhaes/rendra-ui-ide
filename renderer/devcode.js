@@ -42,12 +42,23 @@
   const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } };
 
   // ── Confirmation modal (save prompt, closing terminals/workspaces) ─────────
-  // buttons: [{ choice, label, primary }]; Esc = 'cancel', Enter = the primary button
-  function askChoice({ title, body, buttons }) {
+  // buttons: [{ choice, label, primary }]; Esc = 'cancel', Enter = the primary button.
+  // checkbox: { label } adiciona uma caixa ("Aplicar a todos") e a promessa resolve { choice, marcado }; sem ela resolve a
+  // string `choice`, como sempre (os chamadores antigos não mudam).
+  function askChoice({ title, body, buttons, checkbox }) {
     return new Promise(resolve => {
       const overlay = $('save-overlay');
       $('save-title').textContent = title;
       $('save-body').innerHTML = body;
+      let caixa = null;
+      if (checkbox) {
+        const rotulo = document.createElement('label');
+        rotulo.className = 'save-check';
+        caixa = document.createElement('input');
+        caixa.type = 'checkbox';
+        rotulo.append(caixa, document.createTextNode(` ${checkbox.label}`));
+        $('save-body').appendChild(rotulo);
+      }
       $('save-actions').innerHTML = buttons.map(b =>
         `<button class="btn ${b.primary ? 'btn-primary' : 'btn-secondary'}" data-choice="${b.choice}" type="button">${esc(b.label)}</button>`).join('');
       const primary = buttons.find(b => b.primary)?.choice || buttons[buttons.length - 1].choice;
@@ -56,7 +67,7 @@
         overlay.classList.remove('visible');
         overlay.removeEventListener('click', onClick);
         document.removeEventListener('keydown', onKey, true);
-        resolve(choice);
+        resolve(checkbox ? { choice, marcado: !!caixa.checked } : choice);
       };
       const onClick = e => {
         const btn = e.target.closest('[data-choice]');
@@ -94,7 +105,12 @@
 
   const isDirty = p => { const f = files.get(p); return !!f && f.model.getAlternativeVersionId() !== f.savedVersion; };
 
+  // Mover/colar/excluir em curso: um Ctrl+S entre o rename no main e o remapeamento das abas recriaria o arquivo no lugar antigo
+  let operacaoAtual = Promise.resolve();
+  const comOperacao = fn => { const p = operacaoAtual.then(fn, fn); operacaoAtual = p.catch(() => {}); return p; };
+
   async function saveFile(filePath, quiet) {
+    await operacaoAtual;
     const entry = files.get(filePath);
     if (!entry) return true;
     const res = await dev.write(filePath, entry.model.getValue());
@@ -249,7 +265,7 @@
           </div>
         </div>
         <div class="dev-root-name"></div>
-        <div class="dev-tree"></div>
+        <div class="dev-tree" tabindex="0" aria-label="Arquivos do projeto"></div>
       </aside>
       <div class="dev-splitter" data-split="explorer" title="Arraste para redimensionar"></div>
       ${terminalSectionHtml(true)}
@@ -279,6 +295,8 @@
     applyEditorHidden(ws);
     ws.refs.tree.addEventListener('click', e => onTreeClick(ws, e));
     ws.refs.tree.addEventListener('contextmenu', e => onTreeContextMenu(ws, e));
+    ligarArrasteDaArvore(ws);
+    ws.refs.tree.addEventListener('keydown', e => onTreeKeydown(ws, e));
     el.querySelectorAll('.dev-splitter').forEach(sp => initSplitter(ws, sp));
     renderTree(ws);
     layoutTerminals(ws);
@@ -426,9 +444,10 @@
   // limpeza fica no `document` (dragend e drop) e um dragstart novo sempre recomeça o estado. O dataTransfer leva um
   // tipo PRÓPRIO (RendraReordenar.TIPO), nunca text/plain: soltar uma aba no Monaco ou no xterm não insere texto.
   let arrasteAba = null; // { barra, escopo, id }
-  const limpaMarcasDeArraste = () => document.querySelectorAll('.dragging, .drop-before, .drop-after')
-    .forEach(x => x.classList.remove('dragging', 'drop-before', 'drop-after'));
-  const fimDoArraste = () => { arrasteAba = null; limpaMarcasDeArraste(); };
+  let arrasteArvore = null; // { wsId, caminho }: item da árvore do explorador em movimento (também por identificador, nunca o elemento)
+  const limpaMarcasDeArraste = () => document.querySelectorAll('.dragging, .drop-before, .drop-after, .drop-dentro, .drop-raiz')
+    .forEach(x => x.classList.remove('dragging', 'drop-before', 'drop-after', 'drop-dentro', 'drop-raiz'));
+  const fimDoArraste = () => { arrasteAba = null; arrasteArvore = null; limpaMarcasDeArraste(); };
   document.addEventListener('dragend', fimDoArraste, true);
   document.addEventListener('drop', fimDoArraste); // na fase de bolha: os handlers das abas já leram o estado
 
@@ -664,7 +683,8 @@
       const row = document.createElement('div');
       const kind = fileKind(e.name, e.isDir);
       const isSub = e.isDir && subs.has(lower(e.path));
-      row.className = `dev-node k-${kind}${e.isDir ? ' dir' : ' file'}${isSub ? ' submodule' : ''}${e.path === current ? ' active' : ''}`;
+      row.className = `dev-node k-${kind}${e.isDir ? ' dir' : ' file'}${isSub ? ' submodule' : ''}${e.path === current ? ' active' : ''}${e.isDir && e.path === ws.selecionado ? ' selecionado' : ''}${emRecorte(ws, e.path) ? ' recortado' : ''}`;
+      row.draggable = true;
       row.style.paddingLeft = `${6 + depth * 12}px`;
       row.dataset.path = e.path;
       row.dataset.dir = e.isDir ? '1' : '';
@@ -795,7 +815,7 @@
     const menu = document.createElement('div');
     menu.className = 'dev-ctx-menu';
     menu.setAttribute('role', 'menu');
-    menu.innerHTML = window.RendraMenuExplorador.itensDoMenu(alvo)
+    menu.innerHTML = window.RendraMenuExplorador.itensDoMenu(alvo, { podeColar: !!areaInterna && areaInterna.wsId === ws.id })
       .map(i => (i.sep ? '<div class="dev-ctx-sep" role="separator"></div>' : `<button type="button" role="menuitem" data-k="${i.k}">${esc(i.rotulo)}</button>`)).join('');
     document.body.appendChild(menu);
     menu.style.left = `${Math.max(4, Math.min(e.clientX, window.innerWidth - menu.offsetWidth - 4))}px`;
@@ -811,6 +831,8 @@
       fechar();
       if (b.dataset.k === 'visualizar') visualizarArquivo(ws, row.dataset.path);
       else if (b.dataset.k === 'excluir') excluirItem(ws, row.dataset.path, !!row.dataset.dir);
+      else if (b.dataset.k === 'copiar' || b.dataset.k === 'recortar') copiarOuRecortar(ws, row.dataset.path, b.dataset.k === 'copiar' ? 'copiar' : 'recortar');
+      else if (b.dataset.k === 'colar') colarComPrecedencia(ws, dir);
       else iniciarNovoItem(ws, dir, b.dataset.k);
     });
     menu.querySelector('button').focus();
@@ -840,6 +862,211 @@
     const group = grupoDoPedido(ws, {});
     if (!group.tabs.includes(key)) group.tabs.push(key);
     showInGroup(ws, group, key);
+  }
+
+  // ── Copiar, Recortar, Colar e mover (dentro do projeto) ──
+  // A área interna só vale no mesmo workspace. O app não escreve no clipboard do usuário: a assinatura do clipboard do sistema na
+  // hora da ação diz, no Ctrl+V, se o usuário copiou outra coisa depois (aí vale a do sistema).
+  let areaInterna = null; // { modo: 'copiar' | 'recortar', wsId, caminhos: [path], assinatura }
+  const emRecorte = (ws, p) => !!areaInterna && areaInterna.modo === 'recortar' && areaInterna.wsId === ws.id && areaInterna.caminhos.some(c => lower(c) === lower(p));
+  const marcarRecorte = () => workspaces.forEach(w => w.refs.tree.querySelectorAll('.dev-node').forEach(n => n.classList.toggle('recortado', emRecorte(w, n.dataset.path))));
+
+  async function copiarOuRecortar(ws, caminho, modo) {
+    const assinatura = await dev.clipboardAssinatura().catch(() => '');
+    areaInterna = { modo, wsId: ws.id, caminhos: [caminho], assinatura };
+    marcarRecorte();
+  }
+
+  // Pasta onde o Colar cai com o teclado: a selecionada (se ainda existe na árvore) ou a raiz
+  const destinoDaSelecaoDe = ws => window.RendraSelecaoArvore.destinoDaSelecao({
+    selecionado: ws.selecionado, raiz: ws.root?.root,
+    ehPasta: p => [...ws.refs.tree.querySelectorAll('.dev-node.dir')].some(n => n.dataset.path === p),
+  });
+
+  async function colarInterno(ws, destino) {
+    const { modo, caminhos } = areaInterna;
+    const r = await transferir(ws, { tipo: modo === 'recortar' ? 'mover' : 'copiar', origens: caminhos, destino });
+    if (modo === 'recortar' && r.feitos.length) { areaInterna = null; marcarRecorte(); }
+  }
+
+  // Ctrl+V e Colar do menu: vale a área interna quando o clipboard do sistema não mudou desde a ação; senão a do sistema
+  async function colarComPrecedencia(ws, destino) {
+    const assinaturaAgora = await dev.clipboardAssinatura().catch(() => '');
+    const origem = window.RendraPrecedenciaColar.escolherOrigemDoColar({ interna: areaInterna, assinaturaAgora, wsId: ws.id });
+    if (origem === 'interna') return colarInterno(ws, destino);
+    if (origem === 'outro-projeto') { toast('Copiar e Recortar só valem dentro do mesmo projeto'); return; }
+    return colarDoSistema(ws, destino);
+  }
+
+  const MSG_NADA_PARA_COLAR = 'Nada para colar';
+  async function colarDoSistema(ws, destino) {
+    toast(MSG_NADA_PARA_COLAR);
+  }
+
+  // Pergunta o que fazer com um nome repetido; resolve { choice, marcado }. "Aplicar a todos" só aparece quando restam mais itens.
+  async function perguntarConflito(item, restantes) {
+    const sujos = [...files.keys()].filter(p => isDirty(p) && dentroDe(item.existente, p));
+    const nomes = sujos.slice(0, 5).map(p => `<b>${esc(baseName(p))}</b>`).join(', ') + (sujos.length > 5 ? ` e mais ${sujos.length - 5}` : '');
+    const aviso = sujos.length ? ` ${item.ehPasta ? `Há alterações não salvas em ${nomes}` : 'O arquivo aberto tem alterações não salvas'}, que serão perdidas se você substituir.` : '';
+    const r = await askChoice({
+      title: `"${item.nome}" já existe nesta pasta`,
+      body: `Substituir o que está lá ou manter os dois?${aviso}`,
+      buttons: [{ choice: 'cancel', label: 'Cancelar' }, { choice: 'substituir', label: 'Substituir' }, { choice: 'manter-ambos', label: 'Manter os dois', primary: true }],
+      checkbox: restantes > 0 ? { label: 'Aplicar a todos' } : undefined,
+    });
+    return typeof r === 'string' ? { choice: r, marcado: false } : r;
+  }
+
+  // Copiar, mover ou importar `origens` para `destino`: o main devolve os itens prontos, os com erro e os com nome repetido;
+  // os repetidos passam pela fila de decisões (Substituir / Manter os dois / Aplicar a todos) e voltam ao main com a decisão
+  // de cada um. Depois: abas seguem o caminho novo (mover) ou fecham (destino substituído), a pasta de destino abre e o item
+  // colado é revelado. Devolve { feitos, erros }.
+  async function transferir(ws, { tipo, origens, destino, id }) {
+    const C = window.RendraConflitoNome;
+    const feitos = [], erros = [], avisos = [];
+    const chamar = (decisoes, subconjunto) => comOperacao(() => (tipo === 'importar'
+      ? dev.import({ id, destino, decisoes })
+      : (tipo === 'mover' ? dev.move : dev.copy)({ origens: subconjunto || origens, destino, decisoes })));
+    const recolher = r => {
+      for (const i of r.itens) {
+        if (i.ok && !i.pulado) feitos.push(i); else if (i.ok === false) erros.push(i);
+        if (i.avisos) avisos.push(...i.avisos);
+      }
+    };
+    const res = await chamar();
+    if (!res?.ok) { toast(res?.error || 'Não foi possível concluir'); if (tipo === 'importar') dev.importCancel(id); return { feitos, erros: [res] }; }
+    recolher(res);
+    const conflitos = res.itens.filter(i => i.conflito);
+    const substituidos = new Map(); // origem -> destino que foi substituído
+    if (conflitos.length) {
+      let fila = C.novaFila(conflitos);
+      for (let item = C.proximo(fila); item; item = C.proximo(fila)) fila = C.responder(fila, item, await perguntarConflito(item, C.restantes(fila)));
+      const fim = C.resultado(fila);
+      if (fim.origens.length) {
+        const r2 = await chamar(fim.decisoes, fim.origens);
+        if (r2?.ok) {
+          recolher(r2);
+          for (const c of conflitos) if (fim.decisoes[c.origem] === 'substituir') substituidos.set(c.origem, c.existente);
+        } else toast(r2?.error || 'Não foi possível concluir');
+      } else if (tipo === 'importar') dev.importCancel(id);
+      if (tipo === 'importar' && fim.cancelado && fim.origens.length === 0) dev.importCancel(id);
+    }
+    await comOperacao(async () => {
+      // o destino substituído equivale a excluir o que estava lá: as abas dele fecham sem salvar (antes de remapear as movidas)
+      for (const i of feitos) if (substituidos.has(i.origem)) fecharAbasDe(substituidos.get(i.origem));
+      if (tipo === 'mover') for (const i of feitos) remapearAbas(i.origem, i.destino);
+    });
+    if (feitos.length) {
+      ws.expanded.add(destino);
+      await renderTree(ws);
+      refreshGit(ws);
+      revelarNaArvore(ws, feitos[0].destino);
+    }
+    if (erros.length) toast(erros.length > 1 ? `${erros[0].error} (e mais ${erros.length - 1} com erro)` : erros[0].error);
+    else if (avisos.length) toast(avisos[0]);
+    return { feitos, erros };
+  }
+
+  // Um arquivo ou pasta mudou de lugar (de -> para): toda aba, pasta aberta, seleção e item recortado dentro dele segue o
+  // caminho novo, mantendo o texto e o estado "não salvo". O modelo do Monaco é recriado com a URI nova (a URI de um modelo
+  // não muda, e createModel com URI repetida lança); o antigo só é descartado depois de os editores trocarem de modelo.
+  function remapearAbas(de, para) {
+    const RM = window.RendraRemapear;
+    const op = { insensivel: CASE_INSENSITIVE };
+    const dentro = k => RM.contem(de, pathOfKey(k), op);
+    const novo = k => RM.remapear(de, para, k, op);
+    const antigos = [];
+    for (const k of [...files.keys()].filter(dentro)) {
+      const e = files.get(k), nk = novo(k);
+      const sujo = isDirty(k);
+      const m = monaco.editor.createModel(e.model.getValue(), window.RendraDotenv.linguagemPorNome(nk), monaco.Uri.file(nk));
+      m.onDidChangeContent(() => renderAllTabs());
+      files.delete(k);
+      files.set(nk, { model: m, savedVersion: sujo ? -1 : m.getAlternativeVersionId(), name: baseName(nk) }); // -1 nunca é um id de versão: continua "alterado"
+      antigos.push(e.model);
+    }
+    for (const k of [...viewers.keys()].filter(dentro)) {
+      const e = viewers.get(k), nk = novo(k), np = pathOfKey(nk);
+      viewers.delete(k);
+      viewers.set(nk, { ...e, path: np, name: baseName(np), recriar: true });
+    }
+    for (const w of workspaces) {
+      for (const g of w.groups) {
+        if (!g.tabs.some(dentro) && !dentro(g.active || '')) continue;
+        for (const k of [...g.vistas.keys()].filter(dentro)) soltarVista(g, k);
+        const eraAtiva = g.active && dentro(g.active);
+        g.tabs = g.tabs.map(k => (dentro(k) ? novo(k) : k));
+        if (eraAtiva) { g.active = novo(g.active); const e = entryOf(g.active); if (e) aplicarAbaAtiva(g, g.active, e); }
+        renderTabs(g);
+      }
+      w.expanded = new Set([...w.expanded].map(p => RM.remapear(de, para, p, op)));
+      if (w.selecionado) w.selecionado = RM.remapear(de, para, w.selecionado, op);
+    }
+    antigos.forEach(m => m.dispose());
+    if (areaInterna) areaInterna.caminhos = areaInterna.caminhos.map(p => RM.remapear(de, para, p, op));
+    renderAllTabs();
+    persist();
+  }
+
+  // Mover arrastando na árvore (Ctrl, ou Option no macOS, copia). Só dentro do mesmo workspace. O estado do arraste guarda o
+  // caminho (nunca o elemento: o watcher refaz a árvore no meio do arraste); os listeners ficam na árvore, que não é recriada.
+  function ligarArrasteDaArvore(ws) {
+    const tree = ws.refs.tree;
+    const TIPO = window.RendraSelecaoArvore.TIPO_ARVORE;
+    const destinoDe = e => { const row = e.target.closest?.('.dev-node'); return !row ? ws.root?.root : row.dataset.dir ? row.dataset.path : parentOf(row.dataset.path); };
+    const copiaPeloTeclado = e => (window.rendra.platform === 'darwin' ? e.altKey : e.ctrlKey);
+    const interno = e => !!arrasteArvore && Array.from(e.dataTransfer?.types || []).includes(TIPO);
+    const valido = (destino, copiar) => {
+      if (!arrasteArvore || arrasteArvore.wsId !== ws.id || !destino) return false;
+      const o = arrasteArvore.caminho;
+      if (arrasteArvore.ehPasta && dentroDe(o, destino)) return false; // pasta para dentro dela mesma
+      if (!copiar && lower(parentOf(o)) === lower(destino)) return false; // mover para a própria pasta
+      return true;
+    };
+    tree.addEventListener('dragstart', e => {
+      const row = e.target.closest?.('.dev-node');
+      if (!row || e.target !== row) return;
+      arrasteArvore = { wsId: ws.id, caminho: row.dataset.path, ehPasta: !!row.dataset.dir };
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'copyMove';
+      e.dataTransfer.setData(TIPO, JSON.stringify({ wsId: ws.id })); // tipo próprio, nunca text/plain
+    });
+    tree.addEventListener('dragover', e => {
+      if (!interno(e)) return;
+      const destino = destinoDe(e), copiar = copiaPeloTeclado(e);
+      tree.classList.remove('drop-raiz');
+      tree.querySelectorAll('.drop-dentro').forEach(n => n.classList.remove('drop-dentro'));
+      if (!valido(destino, copiar)) { e.dataTransfer.dropEffect = 'none'; return; }
+      e.preventDefault();
+      e.dataTransfer.dropEffect = copiar ? 'copy' : 'move';
+      if (destino === ws.root?.root) tree.classList.add('drop-raiz');
+      else tree.querySelectorAll('.dev-node.dir').forEach(n => { if (n.dataset.path === destino) n.classList.add('drop-dentro'); });
+    });
+    tree.addEventListener('dragleave', e => {
+      if (e.relatedTarget && tree.contains(e.relatedTarget)) return;
+      tree.classList.remove('drop-raiz');
+      tree.querySelectorAll('.drop-dentro').forEach(n => n.classList.remove('drop-dentro'));
+    });
+    tree.addEventListener('drop', e => {
+      if (!interno(e)) return;
+      const destino = destinoDe(e), copiar = copiaPeloTeclado(e), origem = arrasteArvore;
+      e.preventDefault();
+      limpaMarcasDeArraste();
+      if (!valido(destino, copiar)) return;
+      arrasteArvore = null;
+      transferir(ws, { tipo: copiar ? 'copiar' : 'mover', origens: [origem.caminho], destino });
+    });
+  }
+
+  // Teclado na árvore (o foco precisa estar nela: o Esc do terminal e do Monaco nunca é engolido). Esc cancela o recorte;
+  // Ctrl+V (Cmd+V no macOS) com uma ação interna pendente cola no destino (a seleção ou a raiz).
+  function onTreeKeydown(ws, e) {
+    if (e.key === 'Escape' && areaInterna?.modo === 'recortar') { e.preventDefault(); areaInterna = null; marcarRecorte(); return; }
+    const mod = window.rendra.platform === 'darwin' ? e.metaKey : e.ctrlKey;
+    if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'v' && areaInterna) {
+      e.preventDefault(); // sem o evento paste do sistema: a precedência decide (colarComPrecedencia)
+      colarComPrecedencia(ws, destinoDaSelecaoDe(ws));
+    }
   }
 
   // ── Excluir (Lixeira do sistema) ──
@@ -948,6 +1175,10 @@
 
   async function onTreeClick(ws, e) {
     const row = e.target.closest('.dev-node');
+    // clique em pasta seleciona e alterna expandir; em arquivo, seleciona a pasta que o contém; em área vazia, limpa (destino = raiz)
+    ws.selecionado = window.RendraSelecaoArvore.aoClicar(row ? { ehPasta: !!row.dataset.dir, caminho: row.dataset.path } : null, { raiz: ws.root?.root, paiDe: parentOf });
+    if (ws.selecionado === ws.root?.root) ws.selecionado = null; // a raiz não tem linha: é o destino padrão
+    marcarSelecao(ws);
     if (!row) return;
     const p = row.dataset.path;
     if (row.dataset.dir) {
@@ -956,6 +1187,13 @@
     } else {
       openFile(ws, p);
     }
+  }
+
+  // Realce da pasta selecionada, sem refazer a árvore (o renderDir também aplica, para o realce sobreviver ao watcher)
+  function marcarSelecao(ws) {
+    ws.refs.tree.querySelectorAll('.dev-node.selecionado').forEach(n => n.classList.remove('selecionado'));
+    if (!ws.selecionado) return;
+    ws.refs.tree.querySelectorAll('.dev-node.dir').forEach(n => { if (n.dataset.path === ws.selecionado) n.classList.add('selecionado'); });
   }
 
   // Clique num caminho do terminal (já conferido pelo main): arquivo abre no editor e vai à linha; pasta é
@@ -972,16 +1210,21 @@
       }
       return;
     }
+    await revelarNaArvore(ws, alvo.path, { abrirPasta: true });
+  }
+
+  // Expande os ancestrais (e a própria pasta, com abrirPasta), rola até o item e o destaca por um instante
+  async function revelarNaArvore(ws, caminho, { abrirPasta = false } = {}) {
     if (!ws.root) return;
     const partes = [];
-    for (let d = alvo.path; ; d = d.replace(/[\\/][^\\/]*$/, '')) {
+    for (let d = abrirPasta ? caminho : parentOf(caminho); ; d = d.replace(/[\\/][^\\/]*$/, '')) {
       partes.push(d);
       if (lower(d) === lower(ws.root.root) || !/[\\/]/.test(d.slice(1))) break;
       if (partes.length > 60) break;
     }
     partes.forEach(d => ws.expanded.add(d));
     await renderTree(ws);
-    const no = [...ws.refs.tree.querySelectorAll('.dev-node')].find(n => n.dataset.path && lower(n.dataset.path) === lower(alvo.path));
+    const no = [...ws.refs.tree.querySelectorAll('.dev-node')].find(n => n.dataset.path && lower(n.dataset.path) === lower(caminho));
     if (no) {
       no.scrollIntoView({ block: 'center' });
       no.classList.add('revelado');
@@ -1137,10 +1380,8 @@
     if (v) { v.model?.dispose(); viewers.delete(key); }
   }
 
-  function showInGroup(ws, group, key) {
-    const entry = entryOf(key);
-    if (!entry) return;
-    group.active = key;
+  // Põe a aba `key` na tela do grupo: o modelo no Monaco (somente leitura na visualização) ou o visualizador
+  function aplicarAbaAtiva(group, key, entry) {
     if (entry.model) {
       group.vistas.forEach(v => { v.pausar(); v.el.hidden = true; });
       group.hostEl.classList.remove('com-vista');
@@ -1149,6 +1390,13 @@
     } else {
       mostrarVista(group, key, entry);
     }
+  }
+
+  function showInGroup(ws, group, key) {
+    const entry = entryOf(key);
+    if (!entry) return;
+    group.active = key;
+    aplicarAbaAtiva(group, key, entry);
     setActiveGroup(ws, group);
     renderTabs(group);
     if (entry.model) group.editor.focus(); else group.vistas.get(key)?.el.focus({ preventScroll: true });

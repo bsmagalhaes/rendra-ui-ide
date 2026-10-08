@@ -1,5 +1,5 @@
 /*! Rendra IDE v1.7.2 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('rendra', {
   platform: process.platform, // 'win32' | 'darwin' | 'linux'
@@ -75,6 +75,20 @@ contextBridge.exposeInMainWorld('rendra', {
     createDir: (parent, name) => ipcRenderer.invoke('dev:create-dir', parent, name),
     // manda o arquivo ou a pasta para a Lixeira do sistema -> { ok } | { ok: false, error }
     delete: (item) => ipcRenderer.invoke('dev:delete', item),
+    // copiar e mover dentro do projeto: { origens, destino, decisoes? } -> { ok, destino, itens }
+    copy: (args) => ipcRenderer.invoke('dev:copy', args),
+    move: (args) => ipcRenderer.invoke('dev:move', args),
+    // Arquivos do sistema (Ctrl+V e soltar): os caminhos saem dos File REAIS aqui (webUtils; um File montado no renderer dá ''),
+    // ficam registrados no main e o renderer só recebe { id, nomes }. Nenhum caminho em texto chega ao dev:import.
+    registrarArquivos: (arquivos) => {
+      const caminhos = Array.from(arquivos || []).map(f => { try { return webUtils.getPathForFile(f); } catch { return ''; } }).filter(Boolean);
+      return caminhos.length ? ipcRenderer.invoke('dev:import-registrar', caminhos) : Promise.resolve(null);
+    },
+    import: (args) => ipcRenderer.invoke('dev:import', args),
+    importCancel: (id) => ipcRenderer.invoke('dev:import-cancelar', id),
+    clipboardTemArquivos: () => ipcRenderer.invoke('dev:clipboard-arquivos'),
+    clipboardAssinatura: () => ipcRenderer.invoke('dev:clipboard-assinatura'),
+    colar: () => ipcRenderer.invoke('dev:colar'),
     ptyCreate: (opts) => ipcRenderer.invoke('pty:create', opts),
     ptyShells: () => ipcRenderer.invoke('pty:shells'),
     agentSessions: (opts) => ipcRenderer.invoke('dev:agent-sessions', opts),
