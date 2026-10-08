@@ -810,6 +810,7 @@
       if (!b) return;
       fechar();
       if (b.dataset.k === 'visualizar') visualizarArquivo(ws, row.dataset.path);
+      else if (b.dataset.k === 'excluir') excluirItem(ws, row.dataset.path, !!row.dataset.dir);
       else iniciarNovoItem(ws, dir, b.dataset.k);
     });
     menu.querySelector('button').focus();
@@ -839,6 +840,54 @@
     const group = grupoDoPedido(ws, {});
     if (!group.tabs.includes(key)) group.tabs.push(key);
     showInGroup(ws, group, key);
+  }
+
+  // ── Excluir (Lixeira do sistema) ──
+  const dentroDe = (pai, p) => window.RendraRemapear.contem(pai, p, { insensivel: CASE_INSENSITIVE });
+
+  // Fecha SEM salvar toda aba (de todos os workspaces) cujo arquivo está em `item` (o próprio arquivo ou a pasta e tudo dentro).
+  // Os modelos só são descartados depois de os editores trocarem de aba, para nenhum editor ficar com um modelo morto.
+  function fecharAbasDe(item) {
+    const chaves = new Set();
+    for (const ws of workspaces) {
+      for (const group of [...ws.groups]) {
+        const dentro = group.tabs.filter(k => dentroDe(item, pathOfKey(k)));
+        if (!dentro.length) continue;
+        const idxAtivo = group.tabs.indexOf(group.active);
+        group.tabs = group.tabs.filter(k => !dentro.includes(k));
+        dentro.forEach(k => { soltarVista(group, k); chaves.add(k); });
+        if (!group.tabs.length) removeGroup(ws, group);
+        else if (dentro.includes(group.active)) showInGroup(ws, group, group.tabs[Math.max(0, Math.min(idxAtivo, group.tabs.length - 1))]);
+        else renderTabs(group);
+      }
+    }
+    chaves.forEach(liberarAba);
+    renderAllTabs();
+    persist();
+  }
+
+  // Confirma e manda para a Lixeira. Com alteração não salva dentro do item, a confirmação avisa; confirmando, vai para a
+  // Lixeira e a aba fecha sem salvar. Falha (Lixeira indisponível, como no share do WSL): toast, e nada muda na tela.
+  async function excluirItem(ws, itemPath, ehPasta) {
+    const nome = baseName(itemPath);
+    const sujos = [...files.keys()].filter(p => isDirty(p) && dentroDe(itemPath, p));
+    let aviso = '';
+    if (sujos.length) {
+      const nomes = sujos.slice(0, 5).map(p => `<b>${esc(baseName(p))}</b>`).join(', ') + (sujos.length > 5 ? ` e mais ${sujos.length - 5}` : '');
+      aviso = ehPasta ? ` Há alterações não salvas em ${nomes}, que serão perdidas.` : ' Ele tem alterações não salvas, que serão perdidas.';
+    }
+    const choice = await askChoice({
+      title: `Excluir "${nome}"?`,
+      body: (ehPasta ? `A pasta <b>${esc(nome)}</b> e todo o conteúdo vão para a Lixeira.` : `<b>${esc(nome)}</b> vai para a Lixeira.`) + aviso,
+      buttons: [{ choice: 'cancel', label: 'Cancelar' }, { choice: 'excluir', label: 'Excluir', primary: true }],
+    });
+    if (choice !== 'excluir') return;
+    const res = await dev.delete(itemPath);
+    if (!res?.ok) { toast(res?.error || 'Não foi possível mover para a Lixeira'); return; }
+    fecharAbasDe(itemPath);
+    for (const w of workspaces) for (const d of [...w.expanded]) if (dentroDe(itemPath, d)) w.expanded.delete(d);
+    await renderTree(ws);
+    refreshGit(ws);
   }
 
   async function iniciarNovoItem(ws, dir, kind) {

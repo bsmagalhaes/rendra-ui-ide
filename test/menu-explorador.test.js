@@ -4,13 +4,16 @@ const { itensDoMenu } = require('../renderer/menu-explorador');
 
 const rotulos = alvo => itensDoMenu(alvo).filter(i => !i.sep).map(i => i.rotulo);
 
-test('pasta e área vazia mantêm Novo arquivo e Nova pasta', () => {
-  assert.deepStrictEqual(rotulos('pasta'), ['Novo arquivo', 'Nova pasta']);
+test('a área vazia (a raiz do projeto) só tem os itens de criar e nunca Excluir', () => {
   assert.deepStrictEqual(rotulos('vazio'), ['Novo arquivo', 'Nova pasta']);
 });
 
-test('arquivo ganha Visualizar e mantém os itens de criar (a pasta nasce na pasta do arquivo)', () => {
-  assert.deepStrictEqual(rotulos('arquivo'), ['Visualizar', 'Novo arquivo', 'Nova pasta']);
+test('pasta mantém Novo arquivo e Nova pasta e tem Excluir por último', () => {
+  assert.deepStrictEqual(rotulos('pasta'), ['Novo arquivo', 'Nova pasta', 'Excluir']);
+});
+
+test('arquivo ganha Visualizar, mantém os itens de criar (a pasta nasce na pasta do arquivo) e Excluir por último', () => {
+  assert.deepStrictEqual(rotulos('arquivo'), ['Visualizar', 'Novo arquivo', 'Nova pasta', 'Excluir']);
 });
 
 test('cada item tem uma ação única', () => {

@@ -5,9 +5,12 @@
 (function (root) {
   const NOVO = [{ k: 'file', rotulo: 'Novo arquivo' }, { k: 'dir', rotulo: 'Nova pasta' }];
 
+  const EXCLUIR = { k: 'excluir', rotulo: 'Excluir' };
+
   function itensDoMenu(alvo) {
-    if (alvo === 'arquivo') return [{ k: 'visualizar', rotulo: 'Visualizar' }, { sep: true }, ...NOVO];
-    return [...NOVO];
+    if (alvo === 'arquivo') return [{ k: 'visualizar', rotulo: 'Visualizar' }, { sep: true }, ...NOVO, { sep: true }, EXCLUIR];
+    if (alvo === 'pasta') return [...NOVO, { sep: true }, EXCLUIR];
+    return [...NOVO]; // a área vazia é a raiz do projeto: nunca excluída
   }
 
   const api = { itensDoMenu };

@@ -73,6 +73,8 @@ contextBridge.exposeInMainWorld('rendra', {
     write: (file, content) => ipcRenderer.invoke('dev:write', file, content),
     createFile: (parent, name) => ipcRenderer.invoke('dev:create-file', parent, name),
     createDir: (parent, name) => ipcRenderer.invoke('dev:create-dir', parent, name),
+    // manda o arquivo ou a pasta para a Lixeira do sistema -> { ok } | { ok: false, error }
+    delete: (item) => ipcRenderer.invoke('dev:delete', item),
     ptyCreate: (opts) => ipcRenderer.invoke('pty:create', opts),
     ptyShells: () => ipcRenderer.invoke('pty:shells'),
     agentSessions: (opts) => ipcRenderer.invoke('dev:agent-sessions', opts),

@@ -98,7 +98,8 @@ function criarSandbox(opts = {}) {
   escreve(path.join(projeto, 'b.txt'), 'segundo arquivo\n');
   escreve(path.join(projeto, 'sub', 'c.txt'), 'terceiro arquivo\n');
   for (const [nome, texto] of Object.entries(opts.arquivos || {})) escreve(path.join(projeto, nome), texto);
-  const sb = { dir, home, data, projeto, statusFile: path.join(home, '.rendra-ide', 'claude-status.json') };
+  const lixeira = path.join(dir, 'lixeira');
+  const sb = { dir, home, data, projeto, lixeira, statusFile: path.join(home, '.rendra-ide', 'claude-status.json') };
 
   if (opts.conta !== false) {
     escreve(path.join(home, '.claude.json'), JSON.stringify({
@@ -187,7 +188,7 @@ async function abrir(sb, { w = 1920, h = 1080, semTerminal = false } = {}) {
   const porta = 9400 + Math.floor(Math.random() * 400);
   const electron = require(path.join(ROOT, 'node_modules', 'electron'));
   // O home real continua (shells e Chromium precisam dele); o app lê o home falso via RENDRA_HOME
-  const env = { ...process.env, RENDRA_E2E_HIDDEN: '1', RENDRA_DATA_DIR: sb.data, RENDRA_HOME: sb.home, CODEX_HOME: path.join(sb.home, '.codex') };
+  const env = { ...process.env, RENDRA_E2E_HIDDEN: '1', RENDRA_DATA_DIR: sb.data, RENDRA_HOME: sb.home, CODEX_HOME: path.join(sb.home, '.codex'), RENDRA_E2E_LIXEIRA: sb.lixeira };
   delete env.ELECTRON_RUN_AS_NODE;
   const proc = spawn(electron, [ROOT, `--remote-debugging-port=${porta}`], { cwd: ROOT, env, stdio: 'ignore' });
   const { ws, send, ev } = await conectar(porta);
@@ -1080,7 +1081,7 @@ CENARIOS['explorador-criar'] = async () => {
     await botaoDireito(c.x, c.y);
     await app.espera(`!!document.querySelector('.dev-ctx-menu')`, 5000, 'menu de contexto');
     const itens = await menuItens();
-    afirma(JSON.stringify(itens) === JSON.stringify(['Novo arquivo', 'Nova pasta']), `menu: ${JSON.stringify(itens)}`);
+    afirma(JSON.stringify(itens) === JSON.stringify(['Novo arquivo', 'Nova pasta', 'Excluir']), `menu da pasta: ${JSON.stringify(itens)}`);
     await escolhe('Novo arquivo');
     afirma(await app.ev(`document.activeElement?.classList.contains('dev-novo-input')`), 'o campo de nome está com o foco');
     await app.foto('explorador-campo-nome');
@@ -1095,7 +1096,7 @@ CENARIOS['explorador-criar'] = async () => {
     await botaoDireito(c.x, c.y);
     await app.espera(`!!document.querySelector('.dev-ctx-menu')`, 5000, 'menu de contexto');
     const itensArquivo = await menuItens();
-    afirma(JSON.stringify(itensArquivo) === JSON.stringify(['Visualizar', 'Novo arquivo', 'Nova pasta']), `menu do arquivo: ${JSON.stringify(itensArquivo)}`);
+    afirma(JSON.stringify(itensArquivo) === JSON.stringify(['Visualizar', 'Novo arquivo', 'Nova pasta', 'Excluir']), `menu do arquivo: ${JSON.stringify(itensArquivo)}`);
     await escolhe('Nova pasta');
     await digita('pasta1');
     await app.espera(`[...document.querySelectorAll('.ws.active .dev-node.dir .dev-node-name')].some(e => e.textContent === 'pasta1')`, 15000, 'pasta1 na árvore');
@@ -1398,7 +1399,7 @@ CENARIOS['visualizar'] = async () => {
       await botaoDireito(c.x, c.y);
       await app.espera(`!!document.querySelector('.dev-ctx-menu')`, 5000, 'menu de contexto');
       const itens = await app.ev(`[...document.querySelectorAll('.dev-ctx-menu button')].map(b => b.textContent)`);
-      afirma(itens[0] === 'Visualizar' && itens.includes('Novo arquivo') && itens.includes('Nova pasta'), `menu do arquivo ${nome}: ${JSON.stringify(itens)}`);
+      afirma(itens[0] === 'Visualizar' && itens.includes('Novo arquivo') && itens.includes('Nova pasta') && itens[itens.length - 1] === 'Excluir', `menu do arquivo ${nome}: ${JSON.stringify(itens)}`);
       await app.ev(`[...document.querySelectorAll('.dev-ctx-menu button')].find(b => b.textContent === 'Visualizar').click()`);
     };
     const abasAtivas = () => app.ev(`document.querySelector('.ws.active .dev-tab.active .dev-tab-name')?.textContent ?? null`);
@@ -1499,6 +1500,86 @@ CENARIOS['visualizar'] = async () => {
     await sleep(600);
     const abas = lerConfig(sb).devcode.workspaces.list[0].groups[0].tabs;
     afirma(abas.length > 0 && abas.every(t => !t.startsWith('vista:')), `a configuração não guarda abas de visualização (${abas.map(t => path.basename(t)).join(', ')})`);
+  });
+};
+
+// Excluir (Fase 3): botão direito -> Excluir, confirmação (com aviso de alteração não salva), Lixeira (aqui uma pasta, por
+// RENDRA_E2E_LIXEIRA: a prova do shell.trashItem real está nos spikes), aba fechada sem salvar e sem recriar o arquivo.
+CENARIOS['excluir'] = async () => {
+  await comApp({ semTerminal: true, workspaces: [{ name: 'demo', cols: 1 }], arquivos: { 'limpo.txt': 'sem alteracao\n' } }, async (app, sb) => {
+    await app.espera(`document.querySelectorAll('.ws.active .dev-node').length >= 4`, 20000, 'árvore carregada');
+    const botaoDireito = async (x, y) => {
+      await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+      await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'right', buttons: 2, clickCount: 1 });
+      await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'right', buttons: 0, clickCount: 1 });
+    };
+    const centro = nome => app.ev(`(() => { const n = [...document.querySelectorAll('.ws.active .dev-node')].find(e => e.querySelector('.dev-node-name')?.textContent === ${JSON.stringify(nome)}); if (!n) return null; const r = n.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; })()`);
+    const menuExcluir = async nome => {
+      const c = await centro(nome);
+      await botaoDireito(c.x, c.y);
+      await app.espera(`!!document.querySelector('.dev-ctx-menu')`, 5000, 'menu de contexto');
+      await app.ev(`[...document.querySelectorAll('.dev-ctx-menu button')].find(b => b.textContent === 'Excluir').click()`);
+      await app.espera(`document.getElementById('save-overlay').classList.contains('visible')`, 5000, 'confirmação aberta');
+    };
+    const dialogo = () => app.ev(`({ titulo: document.getElementById('save-title').textContent, corpo: document.getElementById('save-body').textContent, botoes: [...document.querySelectorAll('#save-actions button')].map(b => b.textContent) })`);
+    const escolhe = async c => { await app.ev(`document.querySelector('#save-actions [data-choice=${JSON.stringify(c)}]').click()`); await sleep(500); };
+    const noDisco = (...p) => fs.existsSync(path.join(sb.projeto, ...p));
+    const nomesAbas = () => app.ev(`[...document.querySelectorAll('.ws.active .dev-tab .dev-tab-name')].map(e => e.textContent)`);
+    const nomesDaArvore = () => app.ev(`[...document.querySelectorAll('.ws.active .dev-node .dev-node-name')].map(e => e.textContent)`);
+    const naLixeira = () => (fs.existsSync(sb.lixeira) ? fs.readdirSync(sb.lixeira).map(n => n.replace(/^\d+-/, '')) : []);
+
+    // 1) arquivo sem alteração: confirmação simples, sem o aviso
+    await menuExcluir('limpo.txt');
+    let d = await dialogo();
+    afirma(d.titulo === 'Excluir "limpo.txt"?' && d.corpo === 'limpo.txt vai para a Lixeira.' && d.botoes.join('|') === 'Cancelar|Excluir', `confirmação: ${JSON.stringify(d)}`);
+    await app.foto('excluir-confirmacao');
+    await escolhe('excluir');
+    afirma(!noDisco('limpo.txt') && naLixeira().includes('limpo.txt'), 'limpo.txt saiu do projeto e está na lixeira');
+    afirma(!(await nomesDaArvore()).includes('limpo.txt'), 'a árvore não mostra mais o arquivo');
+
+    // 2) arquivo aberto com alteração não salva: o aviso aparece; Cancelar não faz nada
+    await app.ev(`[...document.querySelectorAll('.ws.active .dev-node')].find(n => n.querySelector('.dev-node-name')?.textContent === 'a.txt').click()`);
+    await app.espera(`document.querySelector('.ws.active .dev-tab.active .dev-tab-name')?.textContent === 'a.txt'`, 15000, 'a.txt aberto');
+    await app.ev(`document.querySelector('.ws.active .monaco-editor textarea').focus()`);
+    await app.digita('NAO SALVO');
+    await app.espera(`!!document.querySelector('.ws.active .dev-tab.dirty')`, 5000, 'aba alterada');
+    await menuExcluir('a.txt');
+    d = await dialogo();
+    afirma(d.corpo.includes('Ele tem alterações não salvas, que serão perdidas.'), `o aviso de alteração não salva aparece: "${d.corpo}"`);
+    await escolhe('cancel');
+    afirma(noDisco('a.txt') && fs.readFileSync(path.join(sb.projeto, 'a.txt'), 'utf8') === 'primeiro arquivo\nlinha dois\n', 'Cancelar: o arquivo continua no disco, sem o texto novo');
+    afirma((await nomesAbas()).includes('a.txt') && await app.ev(`!!document.querySelector('.ws.active .dev-tab.dirty')`), 'Cancelar: a aba continua aberta e alterada');
+
+    // 3) confirmar: Lixeira, aba fecha sem salvar, o arquivo não volta com o Ctrl+S
+    await menuExcluir('a.txt');
+    await escolhe('excluir');
+    afirma(!noDisco('a.txt') && naLixeira().includes('a.txt'), 'a.txt foi para a lixeira');
+    afirma(!(await nomesAbas()).includes('a.txt'), 'a aba de a.txt fechou');
+    afirma(fs.readFileSync(path.join(sb.lixeira, fs.readdirSync(sb.lixeira).find(n => n.endsWith('-a.txt'))), 'utf8') === 'primeiro arquivo\nlinha dois\n', 'o texto não salvo não foi gravado em lugar nenhum');
+    await app.tecla('s', { ctrl: true });
+    await sleep(800);
+    afirma(!noDisco('a.txt'), 'o Ctrl+S depois do fechamento não recria o arquivo');
+
+    // 4) pasta com arquivo aberto e alterado dentro
+    await app.ev(`[...document.querySelectorAll('.ws.active .dev-node')].find(n => n.querySelector('.dev-node-name')?.textContent === 'sub').click()`);
+    await app.espera(`[...document.querySelectorAll('.ws.active .dev-node .dev-node-name')].some(e => e.textContent === 'c.txt')`, 10000, 'sub expandida');
+    await app.ev(`[...document.querySelectorAll('.ws.active .dev-node')].find(n => n.querySelector('.dev-node-name')?.textContent === 'c.txt').click()`);
+    await app.espera(`document.querySelector('.ws.active .dev-tab.active .dev-tab-name')?.textContent === 'c.txt'`, 15000, 'c.txt aberto');
+    await app.ev(`document.querySelector('.ws.active .monaco-editor textarea').focus()`);
+    await app.digita('SUJO');
+    await app.espera(`!!document.querySelector('.ws.active .dev-tab.dirty')`, 5000, 'c.txt alterado');
+    await menuExcluir('sub');
+    d = await dialogo();
+    afirma(d.titulo === 'Excluir "sub"?' && d.corpo.includes('A pasta sub e todo o conteúdo vão para a Lixeira.') && d.corpo.includes('c.txt'), `confirmação da pasta cita o arquivo alterado: "${d.corpo}"`);
+    await escolhe('excluir');
+    afirma(!noDisco('sub') && naLixeira().includes('sub'), 'a pasta sub foi inteira para a lixeira');
+    afirma(fs.readFileSync(path.join(sb.lixeira, fs.readdirSync(sb.lixeira).find(n => n.endsWith('-sub')), 'c.txt'), 'utf8') === 'terceiro arquivo\n', 'o conteúdo da pasta foi junto, sem o texto não salvo');
+    afirma(!(await nomesAbas()).includes('c.txt') && !(await nomesDaArvore()).includes('sub'), 'a aba de dentro da pasta fechou e a árvore atualizou');
+    await app.tecla('s', { ctrl: true });
+    await sleep(600);
+    afirma(!noDisco('sub'), 'a pasta não volta com o Ctrl+S');
+    afirma(await app.ev(`!document.querySelector('.ws.active .dev-tab.dirty')`) && await app.ev(`!document.querySelector('.ws.active .dev-node.st-E')`), 'nenhuma marca de alteração sobrou na árvore');
+    await app.foto('excluir-final');
   });
 };
 

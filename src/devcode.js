@@ -17,6 +17,7 @@ const { ambientePty } = require('./terminal-env');
 const { candidatosDoCaminho } = require('./caminho-terminal');
 const { temImagem } = require('./clip-imagem');
 const { criarManipulador: criarManipuladorMidia } = require('./protocolo-midia');
+const { criarOperacoes } = require('./arquivos-ops');
 const crypto = require('crypto');
 const { criarCiclo } = require('./ciclo-terminais');
 const { criarRegistro } = require('./registro-terminais');
@@ -354,6 +355,18 @@ function registerDevCode({ ipcMain, dialog, store, getWindow, userData, deps = {
   };
   ipcMain.handle('dev:create-file', (_e, parent, name) => criarItem(parent, name, alvo => fs.writeFileSync(alvo, '', { flag: 'wx' })));
   ipcMain.handle('dev:create-dir', (_e, parent, name) => criarItem(parent, name, alvo => fs.mkdirSync(alvo)));
+
+  // Excluir (Lixeira), copiar, mover e importar: src/arquivos-ops.js. shell só entra na hora de excluir (deps.trashItem nos testes).
+  const ops = criarOperacoes({
+    guard, realDentro, inside0,
+    raizes: () => roots,
+    // e2e: RENDRA_E2E_LIXEIRA troca a Lixeira do sistema por uma pasta (a prova real do trashItem está nos spikes; o teste
+    // não deve encher a Lixeira de quem usa a máquina)
+    trashItem: deps.trashItem || (process.env.RENDRA_E2E_LIXEIRA
+      ? async p => { await fs.promises.mkdir(process.env.RENDRA_E2E_LIXEIRA, { recursive: true }); await fs.promises.rename(p, path.join(process.env.RENDRA_E2E_LIXEIRA, `${Date.now()}-${path.basename(p)}`)); }
+      : p => require('electron').shell.trashItem(p)),
+  });
+  ipcMain.handle('dev:delete', (_e, item) => ops.excluir(item));
 
   const send = (channel, payload) => {
     const win = getWindow();
