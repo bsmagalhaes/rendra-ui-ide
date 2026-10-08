@@ -191,7 +191,7 @@ async function abrir(sb, { w = 1920, h = 1080, semTerminal = false } = {}) {
   delete env.ELECTRON_RUN_AS_NODE;
   const proc = spawn(electron, [ROOT, `--remote-debugging-port=${porta}`], { cwd: ROOT, env, stdio: 'ignore' });
   const { ws, send, ev } = await conectar(porta);
-  const app = { sb, proc, ws, send, ev, w, h, semTerminal };
+  const app = { sb, proc, ws, send, ev, w, h, semTerminal, porta };
   sb.appAtual = app;
 
   app.tamanho = async (nw, nh) => {
@@ -1094,6 +1094,8 @@ CENARIOS['explorador-criar'] = async () => {
     c = await centro('a.txt');
     await botaoDireito(c.x, c.y);
     await app.espera(`!!document.querySelector('.dev-ctx-menu')`, 5000, 'menu de contexto');
+    const itensArquivo = await menuItens();
+    afirma(JSON.stringify(itensArquivo) === JSON.stringify(['Visualizar', 'Novo arquivo', 'Nova pasta']), `menu do arquivo: ${JSON.stringify(itensArquivo)}`);
     await escolhe('Nova pasta');
     await digita('pasta1');
     await app.espera(`[...document.querySelectorAll('.ws.active .dev-node.dir .dev-node-name')].some(e => e.textContent === 'pasta1')`, 15000, 'pasta1 na árvore');
@@ -1103,6 +1105,8 @@ CENARIOS['explorador-criar'] = async () => {
     const t = await app.caixa('.ws.active .dev-tree');
     await botaoDireito(Math.round(t.x + t.w / 2), Math.round(t.b - 6));
     await app.espera(`!!document.querySelector('.dev-ctx-menu')`, 5000, 'menu de contexto na área vazia');
+    const itensVazio = await menuItens();
+    afirma(JSON.stringify(itensVazio) === JSON.stringify(['Novo arquivo', 'Nova pasta']), `menu da área vazia: ${JSON.stringify(itensVazio)}`);
     await escolhe('Novo arquivo');
     await digita('raiz.txt');
     await app.espera(`[...document.querySelectorAll('.ws.active .dev-tab.active .dev-tab-name')].some(e => e.textContent === 'raiz.txt')`, 15000, 'raiz.txt aberto');
@@ -1366,6 +1370,135 @@ CENARIOS['midia-abas'] = async () => {
     afirma(csp.fetchWeb === 'bloqueado' && csp.fetchMidia === 'bloqueado', `fetch à web e ao protocolo bloqueados (${JSON.stringify(csp)})`);
     afirma(csp.script === 'bloqueado', 'script de fora não carrega');
     afirma(csp.blobFrame === 'bloqueado', 'iframe com blob: continua bloqueado');
+  });
+};
+
+// Menu Visualizar (Fase 2): texto somente leitura, Markdown renderizado (imagem local pelo protocolo confinado), SVG como
+// imagem e HTML renderizado sem scripts nem navegação; a aba de edição do mesmo arquivo é outra aba.
+CENARIOS['visualizar'] = async () => {
+  const md = [
+    '# Título do leia', '', 'Um **negrito**, um *itálico* e `codigo`.', '', '- item um', '- item dois', '',
+    '<script>document.title = "MD-EXECUTOU"</script>', '', '![foto local](foto.png)', '', '![de fora](../fora.png)', '', '[site](https://exemplo.com/a)', '[inerte](javascript:alert(1))', '',
+  ].join('\n');
+  const html = '<!doctype html><html><head><style>h1{color:#e8650a}</style><meta http-equiv="refresh" content="1;url=https://example.com/"></head><body style="background:#fff"><h1>PAGINA HTML</h1><script>document.title="HTML-EXECUTOU"</script>'
+    + '<a href="https://example.com/" target="_top" style="position:absolute;left:10px;top:100px;width:150px;height:40px;background:#cde;display:block">link</a>'
+    + '<form action="https://example.com/" style="position:absolute;left:10px;top:180px"><button style="width:150px;height:40px">enviar</button></form></body></html>';
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60"><script>document.title="SVG-EXECUTOU"</script><rect width="120" height="60" fill="#e8650a"/></svg>';
+  const arquivos = { 'leia.md': md, 'pagina.html': html, 'desenho.svg': svg, 'notas.txt': 'linha um\nlinha dois\n', 'foto.png': midia('teste.png'), 'doc.pdf': midia('teste.pdf'), 'falso.zip': midia('falso.zip') };
+  await comApp({ semTerminal: true, arquivos, workspaces: [{ name: 'demo', cols: 1 }] }, async (app, sb) => {
+    await app.espera(`document.querySelectorAll('.ws.active .dev-node').length >= 7`, 20000, 'árvore carregada');
+    const botaoDireito = async (x, y) => {
+      await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+      await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'right', buttons: 2, clickCount: 1 });
+      await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'right', buttons: 0, clickCount: 1 });
+    };
+    const centro = nome => app.ev(`(() => { const n = [...document.querySelectorAll('.ws.active .dev-node')].find(e => e.querySelector('.dev-node-name')?.textContent === ${JSON.stringify(nome)}); if (!n) return null; const r = n.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; })()`);
+    const visualizar = async nome => {
+      const c = await centro(nome);
+      await botaoDireito(c.x, c.y);
+      await app.espera(`!!document.querySelector('.dev-ctx-menu')`, 5000, 'menu de contexto');
+      const itens = await app.ev(`[...document.querySelectorAll('.dev-ctx-menu button')].map(b => b.textContent)`);
+      afirma(itens[0] === 'Visualizar' && itens.includes('Novo arquivo') && itens.includes('Nova pasta'), `menu do arquivo ${nome}: ${JSON.stringify(itens)}`);
+      await app.ev(`[...document.querySelectorAll('.dev-ctx-menu button')].find(b => b.textContent === 'Visualizar').click()`);
+    };
+    const abasAtivas = () => app.ev(`document.querySelector('.ws.active .dev-tab.active .dev-tab-name')?.textContent ?? null`);
+    const esperaAba = nome => app.espera(`document.querySelector('.ws.active .dev-tab.active .dev-tab-name')?.textContent === ${JSON.stringify(nome)}`, 15000, `aba ${nome}`);
+    const painel = async nome => { const c = await app.caixa('.ws.active .dev-editors'); return app.foto(nome, { x: c.x, y: c.y, width: c.w, height: c.h }); };
+    const hash = nome => require('crypto').createHash('sha256').update(fs.readFileSync(path.join(sb.projeto, nome))).digest('hex');
+    const titulo = () => app.ev('document.title');
+
+    // 1) texto somente leitura
+    const hashNotas = hash('notas.txt');
+    await visualizar('notas.txt');
+    await esperaAba('notas.txt (visualização)');
+    await app.espera(`!!document.querySelector('.ws.active .monaco-editor')`, 10000, 'Monaco');
+    afirma(await app.ev(`document.querySelector('.ws.active .dev-tab.active').classList.contains('vista')`), 'a aba de visualização tem a classe .vista');
+    await app.ev(`document.querySelector('.ws.active .monaco-editor textarea')?.focus()`);
+    await app.digita('DIGITADO');
+    await sleep(300);
+    afirma(await app.ev(`window.monaco.editor.getModels().filter(m => m.uri.scheme === 'vista').every(m => !m.getValue().includes('DIGITADO'))`), 'digitar na visualização não muda o texto');
+    afirma(await app.ev(`!document.querySelector('.ws.active .dev-tab.dirty')`), 'nenhuma aba marcada como alterada');
+    await app.tecla('s', { ctrl: true });
+    await sleep(400);
+    afirma(hash('notas.txt') === hashNotas, 'Ctrl+S na visualização não grava nada (hash do disco igual)');
+    await painel('visualizar-texto');
+    // o mesmo arquivo aberto para editar: outra aba, sem erro, e a edição não marca a visualização
+    await app.ev(`[...document.querySelectorAll('.ws.active .dev-node')].find(n => n.querySelector('.dev-node-name')?.textContent === 'notas.txt').click()`);
+    await esperaAba('notas.txt');
+    afirma(await app.ev(`[...document.querySelectorAll('.ws.active .dev-tab .dev-tab-name')].map(e => e.textContent).filter(t => t.startsWith('notas.txt')).length`) === 2, 'duas abas: a de edição e a de visualização');
+    await app.ev(`document.querySelector('.ws.active .monaco-editor textarea')?.focus()`);
+    await app.digita('EDITADO');
+    await sleep(400);
+    afirma(await app.ev(`[...document.querySelectorAll('.ws.active .dev-tab')].filter(t => t.classList.contains('dirty')).map(t => t.querySelector('.dev-tab-name').textContent).join('|')`) === 'notas.txt', 'só a aba de edição fica alterada');
+    afirma(await app.ev(`window.monaco.editor.getModels().find(m => m.uri.scheme === 'vista').getValue()`) === 'linha um\nlinha dois\n', 'a visualização continua com o texto do disco');
+    await app.tecla('s', { ctrl: true });
+    await sleep(500);
+    afirma(fs.readFileSync(path.join(sb.projeto, 'notas.txt'), 'utf8').includes('EDITADO'), 'Ctrl+S na aba de edição grava');
+
+    // 2) Markdown renderizado
+    await visualizar('leia.md');
+    await esperaAba('leia.md (visualização)');
+    await app.espera(`!!document.querySelector('.ws.active .dev-viewer:not([hidden]) .dev-md h1')`, 10000, 'Markdown renderizado');
+    afirma(await app.texto('.ws.active .dev-viewer:not([hidden]) .dev-md h1') === 'Título do leia', 'o # vira um título');
+    afirma(await app.ev(`document.querySelectorAll('.ws.active .dev-md li').length === 2 && !!document.querySelector('.ws.active .dev-md b') && !!document.querySelector('.ws.active .dev-md i') && !!document.querySelector('.ws.active .dev-md code')`), 'lista, negrito, itálico e código');
+    afirma(await app.ev(`document.querySelectorAll('.ws.active .dev-md script, .ws.active .dev-md [onerror]').length === 0 && document.querySelector('.ws.active .dev-md').textContent.includes('<script>')`), 'o <script> do .md aparece como texto, não como elemento');
+    afirma(await titulo() === 'Rendra IDE', `o título da janela não mudou (${await titulo()})`);
+    await app.espera(`document.querySelector('.ws.active .dev-md img.md-img')?.naturalWidth > 0`, 10000, 'imagem local carregou');
+    afirma(await app.ev(`document.querySelector('.ws.active .dev-md img.md-img').src.startsWith('rendra-midia://')`), 'a imagem local vem pelo protocolo confinado');
+    afirma(await app.ev(`[...document.querySelectorAll('.ws.active .dev-md .md-img-alt')].some(e => e.textContent === 'de fora')`), 'a imagem fora das pastas abertas vira texto alternativo');
+    afirma(await app.ev(`document.querySelectorAll('.ws.active .dev-md a[data-url]').length === 1 && document.querySelector('.ws.active .dev-md a[data-url]').dataset.url === 'https://exemplo.com/a' && !!document.querySelector('.ws.active .dev-md .md-link-inerte')`), 'só o link http(s) é link; javascript: fica inerte');
+    await painel('visualizar-markdown');
+
+    // 3) SVG como imagem
+    await visualizar('desenho.svg');
+    await esperaAba('desenho.svg (visualização)');
+    await app.espera(`document.querySelector('.ws.active .dev-viewer:not([hidden]) img')?.naturalWidth === 120`, 10000, 'SVG mostrado como imagem');
+    afirma(await titulo() === 'Rendra IDE', 'o script do SVG não executou');
+    afirma(await app.ev(`document.querySelector('.ws.active .dev-viewer:not([hidden]) img').src.startsWith('data:image/svg+xml;base64,')`), 'o SVG entra como imagem data:');
+    await painel('visualizar-svg');
+    // clique no SVG continua abrindo para editar
+    await app.ev(`[...document.querySelectorAll('.ws.active .dev-node')].find(n => n.querySelector('.dev-node-name')?.textContent === 'desenho.svg').click()`);
+    await esperaAba('desenho.svg');
+    afirma(await textoDoModelo(app, 'desenho.svg') === svg, 'o clique no SVG abre o texto no editor');
+
+    // 4) HTML renderizado sem scripts, sem navegação
+    await visualizar('pagina.html');
+    await esperaAba('pagina.html (visualização)');
+    await app.espera(`!!document.querySelector('.ws.active .dev-viewer:not([hidden]) iframe')`, 10000, 'iframe do HTML');
+    const frame = await app.ev(`(() => { const f = document.querySelector('.ws.active .dev-viewer:not([hidden]) iframe'); return { sandbox: f.getAttribute('sandbox'), srcdoc: f.hasAttribute('srcdoc'), src: f.getAttribute('src') }; })()`);
+    afirma(frame.sandbox === '' && frame.srcdoc && frame.src === null, `iframe sandbox="" com srcdoc (${JSON.stringify(frame)})`);
+    await sleep(2200); // passa o tempo do meta refresh
+    const urlAntes = await app.ev('location.href');
+    const r = await app.ev(`(() => { const f = document.querySelector('.ws.active .dev-viewer:not([hidden]) iframe').getBoundingClientRect(); return { x: f.x, y: f.y }; })()`);
+    for (const [dx, dy] of [[20, 120], [20, 200]]) {
+      await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x + dx, y: r.y + dy, button: 'left', clickCount: 1 });
+      await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x + dx, y: r.y + dy, button: 'left', clickCount: 1 });
+      await sleep(1000);
+    }
+    afirma(await app.ev('location.href') === urlAntes, 'a janela não navegou (link target=_top, formulário e meta refresh)');
+    afirma(await titulo() === 'Rendra IDE', 'o script do HTML não executou');
+    const alvos = await (await fetch(`http://127.0.0.1:${app.porta}/json`)).json();
+    afirma(!alvos.some(a => /example\.com/.test(a.url)), `nenhum quadro foi para fora (${alvos.map(a => a.type).join(',')})`);
+    await painel('visualizar-html');
+    // e o clique no HTML continua abrindo para editar
+    await app.ev(`[...document.querySelectorAll('.ws.active .dev-node')].find(n => n.querySelector('.dev-node-name')?.textContent === 'pagina.html').click()`);
+    await esperaAba('pagina.html');
+    afirma(await textoDoModelo(app, 'pagina.html') === html, 'o clique no HTML abre o texto no editor');
+
+    // 5) mídia e binário
+    await visualizar('foto.png');
+    await esperaAba('foto.png');
+    afirma(await app.ev(`!document.querySelector('.ws.active .dev-tab.active.vista')`), 'Visualizar em imagem é igual ao clique (aba sem sufixo)');
+    const abasAntes = await app.ev(`document.querySelectorAll('.ws.active .dev-tab').length`);
+    await visualizar('falso.zip');
+    await sleep(500);
+    afirma((await app.ev(`document.getElementById('toast').textContent`)).includes('Este tipo de arquivo não abre na IDE'), 'zip: mensagem de que não abre');
+    afirma(await app.ev(`document.querySelectorAll('.ws.active .dev-tab').length`) === abasAntes, 'nenhuma aba nova para o zip');
+
+    // 6) visualização não persiste
+    await sleep(600);
+    const abas = lerConfig(sb).devcode.workspaces.list[0].groups[0].tabs;
+    afirma(abas.length > 0 && abas.every(t => !t.startsWith('vista:')), `a configuração não guarda abas de visualização (${abas.map(t => path.basename(t)).join(', ')})`);
   });
 };
 

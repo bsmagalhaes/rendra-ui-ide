@@ -19,7 +19,11 @@
     try { m.load(); } catch { /* nada a liberar */ }
   }
 
-  function criar({ tipo, caminho, nome }) {
+  // texto UTF-8 em base64, para o data: do SVG (btoa só aceita Latin-1)
+  const base64 = texto => { let bin = ''; new TextEncoder().encode(texto).forEach(b => { bin += String.fromCharCode(b); }); return btoa(bin); };
+  const pastaDe = caminho => String(caminho).replace(/[\\/][^\\/]*$/, '');
+
+  function criar({ tipo, caminho, nome, texto }) {
     const el = noDe('div', `dev-viewer dev-viewer-${tipo}`);
     el.tabIndex = 0;
     el.setAttribute('role', 'region');
@@ -42,6 +46,36 @@
       midia.src = url;
       if (tipo === 'audio') el.appendChild(noDe('div', 'dev-viewer-nome', nome));
       el.appendChild(midia);
+    } else if (tipo === 'markdown') {
+      // Markdown já escapado (RendraMarkdownVista); as imagens locais só entram pelo protocolo confinado
+      const M = root.RendraMarkdownVista;
+      const base = pastaDe(caminho);
+      const pagina = noDe('div', 'dev-md');
+      pagina.innerHTML = M.render(texto, { urlLocal: alvo => { const p = M.caminhoLocal(base, alvo); return p && T.mimeDe(p) ? T.urlMidia(p) : null; } });
+      // imagem que não carrega (fora das pastas abertas, apagada): aparece o texto alternativo
+      pagina.addEventListener('error', e => {
+        if (e.target.tagName !== 'IMG') return;
+        e.target.replaceWith(noDe('span', 'md-img-alt', e.target.alt));
+      }, true);
+      pagina.addEventListener('click', e => {
+        const a = e.target.closest('a[data-url]');
+        if (a) { e.preventDefault(); root.rendra.openExternal(a.dataset.url); }
+      });
+      el.appendChild(pagina);
+    } else if (tipo === 'svg') {
+      // SVG só como imagem (nunca no documento): o script de dentro não roda
+      const img = noDe('img', 'dev-viewer-img');
+      img.alt = nome;
+      img.addEventListener('error', () => erro('Não foi possível mostrar este SVG'));
+      img.src = `data:image/svg+xml;base64,${base64(String(texto ?? ''))}`;
+      el.appendChild(img);
+    } else if (tipo === 'html') {
+      // HTML sem nenhum token no sandbox (sem scripts, sem formulário, sem navegação do quadro de cima); entra por propriedade
+      const f = noDe('iframe', 'dev-viewer-html');
+      f.title = nome;
+      f.setAttribute('sandbox', '');
+      f.srcdoc = String(texto ?? '');
+      el.appendChild(f);
     } else if (tipo === 'pdf') {
       const f = noDe('iframe', 'dev-viewer-pdf');
       f.title = nome;

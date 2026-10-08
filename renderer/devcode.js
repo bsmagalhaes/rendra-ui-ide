@@ -790,11 +790,13 @@
     if (!ws.root) return;
     const row = e.target.closest('.dev-node');
     const dir = !row ? ws.root.root : row.dataset.dir ? row.dataset.path : parentOf(row.dataset.path);
+    const alvo = !row ? 'vazio' : row.dataset.dir ? 'pasta' : 'arquivo';
     document.querySelector('.dev-ctx-menu')?.remove();
     const menu = document.createElement('div');
     menu.className = 'dev-ctx-menu';
     menu.setAttribute('role', 'menu');
-    menu.innerHTML = `<button type="button" role="menuitem" data-k="file">Novo arquivo</button><button type="button" role="menuitem" data-k="dir">Nova pasta</button>`;
+    menu.innerHTML = window.RendraMenuExplorador.itensDoMenu(alvo)
+      .map(i => (i.sep ? '<div class="dev-ctx-sep" role="separator"></div>' : `<button type="button" role="menuitem" data-k="${i.k}">${esc(i.rotulo)}</button>`)).join('');
     document.body.appendChild(menu);
     menu.style.left = `${Math.max(4, Math.min(e.clientX, window.innerWidth - menu.offsetWidth - 4))}px`;
     menu.style.top = `${Math.max(4, Math.min(e.clientY, window.innerHeight - menu.offsetHeight - 4))}px`;
@@ -807,9 +809,36 @@
       const b = ev.target.closest('button[data-k]');
       if (!b) return;
       fechar();
-      iniciarNovoItem(ws, dir, b.dataset.k);
+      if (b.dataset.k === 'visualizar') visualizarArquivo(ws, row.dataset.path);
+      else iniciarNovoItem(ws, dir, b.dataset.k);
     });
     menu.querySelector('button').focus();
+  }
+
+  // Menu Visualizar: mídia abre como no clique; texto abre somente leitura; Markdown renderizado; SVG como imagem; HTML
+  // renderizado sem scripts. A aba tem chave própria "vista:<caminho>": o arquivo aberto para editar e a visualização
+  // dele são duas abas, sem dois modelos Monaco na mesma URI. Visualizar de novo relê o arquivo.
+  async function visualizarArquivo(ws, filePath) {
+    try { await loadMonaco(); } catch (e) { toast(e.message); return; }
+    if (TA.tipoDe(filePath) !== 'texto') return openFile(ws, filePath);
+    const res = await dev.read(filePath);
+    if (res.error) { toast(res.binario ? MSG_NAO_ABRE : res.error); return; }
+    const key = TA.chaveVista(filePath);
+    const vista = TA.vistaDe(filePath);
+    const antigo = viewers.get(key);
+    if (vista === 'texto') {
+      // modelo com URI de esquema próprio: nunca colide com o modelo do arquivo editável (file:)
+      let model = antigo?.model;
+      if (model) model.setValue(res.content);
+      else model = monaco.editor.createModel(res.content, window.RendraDotenv.linguagemPorNome(filePath), monaco.Uri.from({ scheme: 'vista', path: `/${filePath.replace(/\\/g, '/')}` }));
+      viewers.set(key, { tipo: 'texto', path: filePath, name: baseName(filePath), model, somenteLeitura: true });
+    } else {
+      viewers.set(key, { tipo: vista, path: filePath, name: baseName(filePath), texto: res.content, recriar: !!antigo });
+    }
+    setEditorHidden(ws, 'arquivo-aberto');
+    const group = grupoDoPedido(ws, {});
+    if (!group.tabs.includes(key)) group.tabs.push(key);
+    showInGroup(ws, group, key);
   }
 
   async function iniciarNovoItem(ws, dir, kind) {
@@ -1066,7 +1095,7 @@
     if (entry.model) {
       group.vistas.forEach(v => { v.pausar(); v.el.hidden = true; });
       group.hostEl.classList.remove('com-vista');
-      group.editor.updateOptions({ readOnly: !!entry.somenteLeitura });
+      group.editor.updateOptions({ readOnly: !!entry.somenteLeitura, readOnlyMessage: { value: 'Visualização somente leitura. Clique no arquivo na árvore para editar.' } });
       group.editor.setModel(entry.model);
     } else {
       mostrarVista(group, key, entry);
