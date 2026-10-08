@@ -71,9 +71,18 @@ function criarManipulador({ guard, realDentro, comLimite = p => p }) {
   };
 }
 
+// Subquadros (iframe) que a janela da IDE aceita navegar: o protocolo de mídia (PDF), about:blank/srcdoc (o HTML da
+// visualização, sem permissão de navegar) e o visualizador de PDF do próprio Chromium. Qualquer outro endereço num subquadro é
+// barrado (defesa em profundidade além da CSP frame-src).
+const VISUALIZADOR_PDF = 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/';
+function quadroPermitido(url) {
+  const u = String(url || '');
+  return u === 'about:blank' || u === 'about:srcdoc' || u.startsWith(`${ESQUEMA}://${HOST}/`) || u.startsWith(VISUALIZADOR_PDF);
+}
+
 // Registra o manipulador SÓ na sessão padrão (a da janela da IDE). Nunca em fromPartition: o Rendra Browser fica de fora.
 function registrarProtocoloMidia({ session }, manipulador) {
   session.defaultSession.protocol.handle(ESQUEMA, manipulador);
 }
 
-module.exports = { criarManipulador, registrarProtocoloMidia, esquemasPrivilegiados, lerFaixa, HOST };
+module.exports = { criarManipulador, registrarProtocoloMidia, esquemasPrivilegiados, lerFaixa, quadroPermitido, HOST };

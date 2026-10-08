@@ -5,7 +5,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 const { montar, pasta, limpar } = require('./helpers/devcode-montar');
-const { registrarProtocoloMidia, lerFaixa } = require('../src/protocolo-midia');
+const { registrarProtocoloMidia, lerFaixa, quadroPermitido } = require('../src/protocolo-midia');
 const { urlMidia } = require('../renderer/tipo-arquivo');
 
 test.after(limpar);
@@ -149,6 +149,11 @@ test('registrarProtocoloMidia usa só a sessão padrão e nunca uma partição (
   const fn = () => {};
   registrarProtocoloMidia(electron, fn);
   assert.deepStrictEqual(chamadas, [['padrao', 'rendra-midia', fn]]);
+});
+
+test('subquadros: só o protocolo de mídia, about:blank/srcdoc e o visualizador de PDF; todo o resto é barrado', () => {
+  for (const ok of ['about:blank', 'about:srcdoc', 'rendra-midia://arquivo/C%3A%5Cp%5Ca.pdf', 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/index.html', 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/4d00daef-424f-488c-9447-b9d880187cf8']) assert.ok(quadroPermitido(ok), ok);
+  for (const ruim of ['https://example.com/', 'http://localhost/', 'file:///C:/x.html', 'javascript:alert(1)', 'data:text/html,<p>x</p>', 'blob:null/abc', 'chrome-extension://outraextensao/x.html', 'rendra-midia://outro/x', 'about:config', '', undefined]) assert.ok(!quadroPermitido(ruim), String(ruim));
 });
 
 test('a CSP libera o esquema só para imagem, mídia e quadro, e continua sem rede nem blob', () => {

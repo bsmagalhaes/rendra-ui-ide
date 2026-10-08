@@ -1319,6 +1319,8 @@ CENARIOS['midia-abas'] = async () => {
     await app.espera(`!!document.querySelector('.ws.active .dev-viewer:not([hidden]) iframe')`, 10000, 'iframe do PDF');
     await sleep(2500);
     afirma(await visivel('iframe'), 'o PDF está num iframe visível');
+    const alvosPdf = await (await fetch(`http://127.0.0.1:${app.porta}/json`)).json();
+    afirma(alvosPdf.some(a => a.type === 'iframe' && a.url.startsWith('chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/')), `o visualizador de PDF do Chromium carregou no subquadro (${alvosPdf.map(a => `${a.type}:${a.url.slice(0, 40)}`).join(' ')})`);
     await painel('midia-pdf');
 
     // outro binário: a mensagem diz que não abre, sem aba nova
@@ -1869,6 +1871,139 @@ CENARIOS['mover-arrastar'] = async () => {
     await T.tecla('Escape');
     afirma(!(await T.classes('dest/extra.txt')).includes('recortado'), 'o Esc na árvore cancela');
   });
+};
+
+// Colar arquivos do sistema e soltar arquivos do sistema na árvore (Fase 5). Windows: usa o PowerShell para copiar arquivos
+// como o Explorer faz (CF_HDROP). O clipboard do dono da máquina é usado: o texto dele é guardado e devolvido no fim.
+CENARIOS['colar-sistema'] = async () => {
+  if (process.platform !== 'win32') { console.log('  (só no Windows: o cenário copia arquivos pelo PowerShell; macOS e Linux não foram exercitados)'); return; }
+  const ps = comando => execFileSync('powershell.exe', ['-NoProfile', '-Command', comando], { encoding: 'utf8' });
+  const copiarNoSistema = (...caminhos) => ps(`Set-Clipboard -Path ${caminhos.map(c => `'${c}'`).join(',')}`);
+  const textoDoDono = (() => { try { return ps('Get-Clipboard -Raw'); } catch { return null; } })();
+  const arquivos = { 'dest/.keep': '', 'extra.txt': 'extra\n', 'b.txt': 'B-DO-PROJETO\n' };
+  try {
+    await comApp({ semTerminal: true, workspaces: [{ name: 'demo', cols: 1 }], arquivos }, async (app, sb) => {
+      const T = ferramentasArvore(app, sb);
+      await app.espera(`document.querySelectorAll('.ws.active .dev-node').length >= 5`, 20000, 'árvore carregada');
+      const ext = path.join(sb.dir, 'externo');
+      escreve(path.join(ext, 'ext1.txt'), 'um\n');
+      escreve(path.join(ext, 'ext3.txt'), 'tres\n');
+      escreve(path.join(ext, 'ext4.txt'), 'quatro\n');
+      escreve(path.join(ext, 'ext5.txt'), 'cinco\n');
+      escreve(path.join(ext, 'pastaext', 'f1.txt'), 'f1\n');
+      escreve(path.join(ext, 'pastaext', 'sub', 'f2.txt'), 'f2\n');
+      fs.mkdirSync(path.join(ext, 'pastaext', 'vazia'), { recursive: true });
+      escreve(path.join(ext, 'conf', 'a.txt'), 'EXT-A\n');
+      escreve(path.join(ext, 'conf', 'b.txt'), 'EXT-B\n');
+      const ctrlV = async () => {
+        const base = { key: 'v', code: 'KeyV', windowsVirtualKeyCode: 86, modifiers: 2 };
+        await app.send('Input.dispatchKeyEvent', { type: 'keyDown', ...base, commands: ['paste'] });
+        await app.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+        await sleep(500);
+      };
+      const toast = () => app.ev(`document.getElementById('toast').textContent`);
+
+      // 1) Ctrl+V com a pasta selecionada: arquivo e pasta (com subpastas e pasta vazia) entram nela; a origem não é tocada
+      copiarNoSistema(path.join(ext, 'ext1.txt'), path.join(ext, 'pastaext'));
+      await T.cliqueReal('dest'); // seleciona a pasta e leva o foco para a árvore
+      afirma((await T.classes('dest')).includes('selecionado'), 'dest está selecionada');
+      await ctrlV();
+      await T.espera(async () => T.noDisco('dest', 'pastaext', 'sub', 'f2.txt'));
+      afirma(T.le('dest', 'ext1.txt') === 'um\n' && T.le('dest', 'pastaext', 'f1.txt') === 'f1\n' && T.le('dest', 'pastaext', 'sub', 'f2.txt') === 'f2\n' && fs.statSync(path.join(sb.projeto, 'dest', 'pastaext', 'vazia')).isDirectory(), 'Ctrl+V cola arquivo e pasta com o conteúdo na pasta selecionada');
+      afirma(fs.readFileSync(path.join(ext, 'ext1.txt'), 'utf8') === 'um\n' && fs.existsSync(path.join(ext, 'pastaext', 'sub', 'f2.txt')), 'a origem no sistema continua intacta (é cópia)');
+      afirma((await T.nomesDaArvore()).includes('ext1.txt'), 'a árvore mostra o que foi colado (a pasta de destino abriu)');
+      await app.foto('colar-sistema-arvore');
+
+      // 2) sem seleção: cola na raiz
+      copiarNoSistema(path.join(ext, 'ext3.txt'));
+      await T.cliqueReal(null);
+      await ctrlV();
+      await T.espera(async () => T.noDisco('ext3.txt'));
+      afirma(T.noDisco('ext3.txt') && T.le('ext3.txt') === 'tres\n', 'sem seleção o Ctrl+V cola na raiz do projeto');
+
+      // 3) dois nomes repetidos: uma caixa só, com "Aplicar a todos"
+      copiarNoSistema(path.join(ext, 'conf', 'a.txt'), path.join(ext, 'conf', 'b.txt'));
+      await T.cliqueReal(null);
+      await ctrlV();
+      await T.esperaDialogo();
+      let d = await T.dialogo();
+      afirma(d.titulo === '"a.txt" já existe nesta pasta' && d.caixa, `o primeiro conflito mostra "Aplicar a todos" (${JSON.stringify({ t: d.titulo, caixa: d.caixa })})`);
+      await app.foto('colar-sistema-conflito');
+      await T.responde('substituir', { marcar: true });
+      afirma(!(await T.dialogo()).visivel, 'com "Aplicar a todos" a caixa não volta para o segundo');
+      afirma(T.le('a.txt') === 'EXT-A\n' && T.le('b.txt') === 'EXT-B\n', 'a.txt e b.txt do projeto foram substituídos pelos do sistema');
+
+      // 4) Colar do menu com arquivos do sistema (sem ação interna): o menu oferece Colar e o item entra na pasta clicada
+      copiarNoSistema(path.join(ext, 'ext4.txt'));
+      await T.botaoDireito('dest');
+      const itens = await T.itensDoMenu();
+      afirma(itens.includes('Colar'), `o menu da pasta oferece Colar com arquivos do sistema: ${JSON.stringify(itens)}`);
+      await T.escolheNoMenu('Colar');
+      await T.espera(async () => T.noDisco('dest', 'ext4.txt'));
+      afirma(T.le('dest', 'ext4.txt') === 'quatro\n', 'Colar do menu coloca o arquivo do sistema na pasta clicada');
+
+      // 5) precedência: Copiar interno vale enquanto o sistema não mudou; depois de copiar outro arquivo no sistema, vale o do sistema
+      await T.menu('extra.txt', 'Copiar');
+      await T.cliqueReal('dest');
+      await ctrlV();
+      await T.espera(async () => T.noDisco('dest', 'extra.txt'));
+      afirma(T.noDisco('dest', 'extra.txt') && !T.noDisco('dest', 'ext5.txt'), 'Copiar interno + Ctrl+V cola o interno');
+      copiarNoSistema(path.join(ext, 'ext5.txt'));
+      await T.cliqueReal('dest');
+      await ctrlV();
+      await T.espera(async () => T.noDisco('dest', 'ext5.txt'));
+      afirma(T.noDisco('dest', 'ext5.txt'), 'depois de copiar no sistema, o Ctrl+V cola o do sistema (mesmo com a ação interna pendente)');
+
+      // 6) texto no clipboard: o Ctrl+V na árvore não importa nada nem pergunta nada
+      ps(`Set-Clipboard -Value 'so texto'`);
+      const antes = JSON.stringify(fs.readdirSync(path.join(sb.projeto, 'dest')).sort());
+      await T.cliqueReal('dest');
+      await ctrlV();
+      await sleep(600);
+      afirma(JSON.stringify(fs.readdirSync(path.join(sb.projeto, 'dest')).sort()) === antes && !(await T.dialogo()).visivel, 'texto no clipboard: nada é importado e nenhuma caixa abre');
+
+      // 7) soltar arquivos do sistema (arraste nativo por CDP, com File de caminho real)
+      const soltar = async (rotulo, alvo, caminhos) => {
+        const dados = { items: [], files: caminhos, dragOperationsMask: 1 };
+        for (const tipo of ['dragEnter', 'dragOver', 'dragOver', 'drop']) { await app.send('Input.dispatchDragEvent', { type: tipo, x: alvo.x, y: alvo.y, data: dados }); await sleep(60); }
+        await sleep(600);
+      };
+      escreve(path.join(ext, 'solta1.txt'), 'solta\n');
+      escreve(path.join(ext, 'solta2.txt'), 'solta2\n');
+      await soltar('pasta', await T.centro('dest'), [path.join(ext, 'solta1.txt')]);
+      afirma(T.noDisco('dest', 'solta1.txt') && T.le('dest', 'solta1.txt') === 'solta\n', 'soltar um arquivo do sistema sobre a pasta copia para ela');
+      await soltar('vazio', await T.areaVazia(), [path.join(ext, 'solta2.txt')]);
+      afirma(T.noDisco('solta2.txt'), 'soltar na área vazia da árvore copia para a raiz');
+      const urlAntes = await app.ev('location.href');
+      const painel = await app.caixa('.ws.active .dev-editors');
+      const nRaiz = fs.readdirSync(sb.projeto).length;
+      escreve(path.join(ext, 'solta3.txt'), 'x');
+      await soltar('fora', { x: Math.round(painel.x + painel.w / 2), y: Math.round(painel.y + painel.h / 2) }, [path.join(ext, 'solta3.txt')]);
+      afirma(fs.readdirSync(sb.projeto).length === nRaiz && !T.noDisco('dest', 'solta3.txt') && await app.ev('location.href') === urlAntes, 'soltar fora da árvore não copia nada e não navega a janela');
+      // nome repetido ao soltar: a mesma caixa
+      await soltar('conflito', await T.centro('dest'), [path.join(ext, 'solta1.txt')]);
+      await T.esperaDialogo();
+      afirma((await T.dialogo()).titulo === '"solta1.txt" já existe nesta pasta', 'soltar sobre nome repetido pergunta');
+      await T.responde('manter-ambos');
+      afirma(T.noDisco('dest', 'solta1 (2).txt'), 'Manter os dois ao soltar: solta1 (2).txt');
+
+      // 8) segurança: um File montado no renderer não vira caminho, e o import não aceita caminho em texto
+      const seg = await app.ev(`(async () => {
+        const r = {};
+        r.forjado = await window.rendra.dev.registrarArquivos([new File(['x'], 'forjado.txt')]);
+        r.texto = await window.rendra.dev.import({ id: ${JSON.stringify(path.join(ext, 'ext1.txt'))}, destino: ${JSON.stringify(sb.projeto)} });
+        r.semId = await window.rendra.dev.import({ destino: ${JSON.stringify(sb.projeto)} });
+        r.expostos = Object.keys(window.rendra.dev).filter(k => /import|registr/i.test(k)).sort();
+        return r;
+      })()`);
+      afirma(seg.forjado === null, 'um File criado no renderer não registra nada');
+      afirma(seg.texto.ok === false && seg.semId.ok === false && !T.noDisco('forjado.txt'), 'dev.import com caminho em texto ou sem id é recusado');
+      afirma(JSON.stringify(seg.expostos) === JSON.stringify(['import', 'importCancel', 'registrarArquivos']), `a API exposta de importação (${JSON.stringify(seg.expostos)})`);
+    });
+  } finally {
+    // devolve o texto que o dono da máquina tinha no clipboard (só texto: outros formatos não se restauram)
+    try { if (textoDoDono != null && textoDoDono !== '') ps(`Set-Clipboard -Value ${JSON.stringify(textoDoDono.replace(/\r?\n$/, ''))}`); else ps('Set-Clipboard -Value $null'); } catch { /* sem PowerShell */ }
+  }
 };
 
 // ── EXECUÇÃO ────────────────────────────────────────────────────────────────

@@ -262,6 +262,11 @@ app.on('web-contents-created', (_e, wc) => {
   };
   wc.on('will-navigate', navegaSo);
   wc.on('will-redirect', navegaSo);
+  // Subquadros (o PDF e o HTML da visualização do explorador) só vão para o que a IDE aceita (src/protocolo-midia.js)
+  wc.on('will-frame-navigate', e => {
+    if (e.isMainFrame || wc.session === require('electron').session.fromPartition(rb.PARTICAO)) return;
+    if (!require('./src/protocolo-midia').quadroPermitido(e.url)) e.preventDefault();
+  });
 });
 
 ipcMain.handle('set-filters', async (_e, filters) => {

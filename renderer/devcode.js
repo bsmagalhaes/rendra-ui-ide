@@ -297,6 +297,7 @@
     ws.refs.tree.addEventListener('contextmenu', e => onTreeContextMenu(ws, e));
     ligarArrasteDaArvore(ws);
     ws.refs.tree.addEventListener('keydown', e => onTreeKeydown(ws, e));
+    ws.refs.tree.addEventListener('paste', e => onTreePaste(ws, e));
     el.querySelectorAll('.dev-splitter').forEach(sp => initSplitter(ws, sp));
     renderTree(ws);
     layoutTerminals(ws);
@@ -450,6 +451,10 @@
   const fimDoArraste = () => { arrasteAba = null; arrasteArvore = null; limpaMarcasDeArraste(); };
   document.addEventListener('dragend', fimDoArraste, true);
   document.addEventListener('drop', fimDoArraste); // na fase de bolha: os handlers das abas já leram o estado
+  // Arquivo do sistema solto FORA da árvore não copia nada e não navega a janela (sem preventDefault o Chromium abriria o file://)
+  const arrasteDeArquivos = e => Array.from(e.dataTransfer?.types || []).includes('Files');
+  document.addEventListener('dragover', e => { if (arrasteDeArquivos(e) && !e.target.closest?.('.dev-tree')) { e.preventDefault(); e.dataTransfer.dropEffect = 'none'; } });
+  document.addEventListener('drop', e => { if (arrasteDeArquivos(e)) e.preventDefault(); });
 
   // Região viva única (index.html, fora das três tablist): o leitor de tela anuncia a nova posição
   let timerAnuncio = null;
@@ -805,17 +810,18 @@
 
   // ── Novo arquivo / nova pasta (botão direito no explorador) ──
   // Pasta onde nasce o item: a própria pasta clicada, a pasta do arquivo, ou a raiz em área vazia
-  function onTreeContextMenu(ws, e) {
+  async function onTreeContextMenu(ws, e) {
     e.preventDefault();
     if (!ws.root) return;
     const row = e.target.closest('.dev-node');
+    const temArquivosDoSistema = await dev.clipboardTemArquivos().catch(() => false);
     const dir = !row ? ws.root.root : row.dataset.dir ? row.dataset.path : parentOf(row.dataset.path);
     const alvo = !row ? 'vazio' : row.dataset.dir ? 'pasta' : 'arquivo';
     document.querySelector('.dev-ctx-menu')?.remove();
     const menu = document.createElement('div');
     menu.className = 'dev-ctx-menu';
     menu.setAttribute('role', 'menu');
-    menu.innerHTML = window.RendraMenuExplorador.itensDoMenu(alvo, { podeColar: !!areaInterna && areaInterna.wsId === ws.id })
+    menu.innerHTML = window.RendraMenuExplorador.itensDoMenu(alvo, { podeColar: (!!areaInterna && areaInterna.wsId === ws.id) || temArquivosDoSistema })
       .map(i => (i.sep ? '<div class="dev-ctx-sep" role="separator"></div>' : `<button type="button" role="menuitem" data-k="${i.k}">${esc(i.rotulo)}</button>`)).join('');
     document.body.appendChild(menu);
     menu.style.left = `${Math.max(4, Math.min(e.clientX, window.innerWidth - menu.offsetWidth - 4))}px`;
@@ -898,10 +904,30 @@
     return colarDoSistema(ws, destino);
   }
 
-  const MSG_NADA_PARA_COLAR = 'Nada para colar';
+  // Arquivos copiados no sistema (Explorer, Finder): chegam pelo evento paste da árvore (clipboardData.files), o mesmo nos três
+  // sistemas. Aqui só se pede o evento: o Colar do menu o dispara por webContents.paste (colarEm guarda a pasta clicada) e, se
+  // nenhum arquivo chegar, avisa.
   async function colarDoSistema(ws, destino) {
-    toast(MSG_NADA_PARA_COLAR);
+    const pedido = { dir: destino, ate: Date.now() + 4000 };
+    ws.colarEm = pedido;
+    ws.refs.tree.focus();
+    await dev.colar();
+    setTimeout(() => { if (ws.colarEm === pedido) { ws.colarEm = null; toast('Não há arquivos copiados para colar'); } }, 1200);
   }
+
+  // Ctrl+V (ou Colar do menu) na árvore com arquivos do sistema: o preload lê os caminhos dos File reais e o renderer só recebe
+  // { id, nomes }. Texto e imagem seguem o fluxo normal do navegador.
+  function onTreePaste(ws, e) {
+    const arquivos = Array.from(e.clipboardData?.files || []);
+    if (!arquivos.length) return;
+    e.preventDefault();
+    const pedido = ws.colarEm && ws.colarEm.ate > Date.now() ? ws.colarEm : null;
+    ws.colarEm = null;
+    const destino = pedido ? pedido.dir : destinoDaSelecaoDe(ws);
+    dev.registrarArquivos(arquivos).then(r => { if (r) importarDoSistema(ws, r, destino); else toast('Não foi possível ler os arquivos copiados'); });
+  }
+
+  const importarDoSistema = (ws, { id, nomes }, destino) => transferir(ws, { tipo: 'importar', id, origens: nomes, destino });
 
   // Pergunta o que fazer com um nome repetido; resolve { choice, marcado }. "Aplicar a todos" só aparece quando restam mais itens.
   async function perguntarConflito(item, restantes) {
@@ -1023,6 +1049,8 @@
       if (!copiar && lower(parentOf(o)) === lower(destino)) return false; // mover para a própria pasta
       return true;
     };
+    // Arquivos soltos do sistema (Explorer, Finder): copiam para a pasta sob o mouse; área vazia = raiz
+    const doSistema = e => !arrasteArvore && Array.from(e.dataTransfer?.types || []).includes('Files');
     tree.addEventListener('dragstart', e => {
       const row = e.target.closest?.('.dev-node');
       if (!row || e.target !== row) return;
@@ -1032,6 +1060,16 @@
       e.dataTransfer.setData(TIPO, JSON.stringify({ wsId: ws.id })); // tipo próprio, nunca text/plain
     });
     tree.addEventListener('dragover', e => {
+      if (doSistema(e)) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        const destino = destinoDe(e);
+        tree.classList.remove('drop-raiz');
+        tree.querySelectorAll('.drop-dentro').forEach(n => n.classList.remove('drop-dentro'));
+        if (destino === ws.root?.root) tree.classList.add('drop-raiz');
+        else tree.querySelectorAll('.dev-node.dir').forEach(n => { if (n.dataset.path === destino) n.classList.add('drop-dentro'); });
+        return;
+      }
       if (!interno(e)) return;
       const destino = destinoDe(e), copiar = copiaPeloTeclado(e);
       tree.classList.remove('drop-raiz');
@@ -1048,6 +1086,15 @@
       tree.querySelectorAll('.drop-dentro').forEach(n => n.classList.remove('drop-dentro'));
     });
     tree.addEventListener('drop', e => {
+      if (doSistema(e)) {
+        e.preventDefault();
+        const destino = destinoDe(e);
+        const arquivos = Array.from(e.dataTransfer.files || []);
+        limpaMarcasDeArraste();
+        if (!arquivos.length || !destino) return;
+        dev.registrarArquivos(arquivos).then(r => { if (r) importarDoSistema(ws, r, destino); else toast('Não foi possível ler os arquivos soltos'); });
+        return;
+      }
       if (!interno(e)) return;
       const destino = destinoDe(e), copiar = copiaPeloTeclado(e), origem = arrasteArvore;
       e.preventDefault();
