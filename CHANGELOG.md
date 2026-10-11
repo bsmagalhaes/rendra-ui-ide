@@ -8,6 +8,11 @@
 - Escolher "Windows" ao abrir uma pasta abre no Windows, mesmo que você já a tenha aberto no WSL antes. A mesma pasta pode ficar em duas abas, uma no Windows e outra no WSL, e cada aba guarda o seu ambiente.
 - O CMD do Windows não aceita uma pasta `\\wsl.localhost\...` como pasta atual. A IDE usa a letra de unidade quando a pasta está em `/mnt/<letra>`, senão o `pushd`, que mapeia uma letra temporária (ela fica ocupada até o CMD fechar). Se nem isso for possível, o terminal mostra uma mensagem explicando.
 - Cada ambiente tem as suas conversas e a sua conta: o seletor de conversas e a marca "em uso" seguem o ambiente do terminal em que você está, e os caminhos que viram link no terminal também.
+### Explorador
+- A árvore ganhou uma ordem fixa: primeiro as pastas que começam com ponto, depois as demais pastas, depois os arquivos que começam com ponto e por último os demais arquivos, cada grupo por nome. O `.git` continua escondido.
+- O botão "?" do cabeçalho abre a legenda do explorador: cada linha mostra, com uma amostra igual à da árvore, o que a cor do nome e o ícone querem dizer (novo, modificado, apagado, não salvo, submódulo, oculto, ignorado, arquivo aberto, pasta selecionada e recortado).
+- Busca no projeto pelo botão da lupa ou por Ctrl+Shift+F (Cmd+Shift+F no macOS), num painel que desliza pela direita e volta com o último termo e os resultados. Busca o texto dos arquivos (ignora maiúsculas por padrão, com os botões "Diferenciar maiúsculas", "Palavra inteira" e "Expressão regular") ou o nome do arquivo. Pede pelo menos 2 caracteres, respeita o `.gitignore` em repositório git, pula `node_modules` fora dele e não segue links para fora do projeto. Para em 500 ocorrências, 200 arquivos ou 10 segundos (20 segundos em projeto no WSL) e avisa que o resultado é parcial.
+- Clicar num resultado abre o arquivo na linha, abre as pastas da árvore até ele e deixa a pasta dele selecionada. Na página Terminal, que não tem explorador, o Ctrl+Shift+F continua indo para o programa do terminal.
 
 ## 1.8.0 · 08/10/2026
 ### Imagens, áudio, vídeo e PDF no editor

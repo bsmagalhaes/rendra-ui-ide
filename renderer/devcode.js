@@ -26,6 +26,9 @@
   // leitura, Markdown, SVG, HTML). Nunca entram em `files`: isDirty, saveFile e o Ctrl+S só enxergam arquivos editáveis.
   const viewers = new Map(); // key → { tipo, path, name, texto?, model? }
   const TA = window.RendraTipoArquivo;
+  const { fileKind, emblema } = window.RendraLegenda; // o tipo pelo nome e o emblema da linha: uma fonte só, da árvore e da legenda
+  const MODELO_BUSCA = window.RendraBuscaModelo;
+  const ATALHO_BUSCA = window.rendra.platform === 'darwin' ? 'Cmd+Shift+F' : 'Ctrl+Shift+F';
   const entryOf = key => files.get(key) || viewers.get(key);
   const pathOfKey = key => (key ? TA.caminhoDaChave(key) : key);
   const nomeDaAba = key => {
@@ -262,15 +265,40 @@
             <button class="dev-icon-btn" data-act="open" title="Abrir pasta">📂</button>
             <button class="dev-icon-btn" data-act="refresh" title="Atualizar">↻</button>
             <button class="dev-icon-btn" data-act="collapse" title="Recolher tudo">⊟</button>
+            <button class="dev-icon-btn" type="button" data-act="search" title="Buscar no projeto (${ATALHO_BUSCA})" aria-label="Buscar no projeto" aria-expanded="false" aria-controls="dev-busca-${ws.id}"><svg class="dev-ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg></button>
+            <button class="dev-icon-btn" type="button" data-act="legend" title="Legenda do explorador" aria-label="Legenda do explorador" aria-haspopup="dialog" aria-expanded="false" aria-controls="dev-legenda-${ws.id}"><svg class="dev-ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M6.2 6.3a1.9 1.9 0 1 1 2.6 1.8c-.5.3-.8.7-.8 1.3"/><path d="M8 11.5v.3"/></svg></button>
           </div>
         </div>
+        <div class="dev-legenda" id="dev-legenda-${ws.id}" role="dialog" aria-label="Legenda do explorador" tabindex="-1"></div>
         <div class="dev-root-name"></div>
         <div class="dev-tree" tabindex="0" aria-label="Arquivos do projeto"></div>
       </aside>
       <div class="dev-splitter" data-split="explorer" title="Arraste para redimensionar"></div>
       ${terminalSectionHtml(true)}
       <div class="dev-splitter" data-split="editor" title="Arraste para redimensionar"></div>
-      <section class="dev-editors"><div class="dev-editor-empty">Clique num arquivo do explorador para editar aqui</div><button class="dev-icon-btn dev-editor-hide" type="button" data-acao="esconder-editor" title="Esconder painel do editor" aria-label="Esconder painel do editor"><svg class="dev-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button></section>`;
+      <section class="dev-editors"><div class="dev-editor-empty">Clique num arquivo do explorador para editar aqui</div><button class="dev-icon-btn dev-editor-hide" type="button" data-acao="esconder-editor" title="Esconder painel do editor" aria-label="Esconder painel do editor"><svg class="dev-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button></section>
+      <div class="dev-busca-trilho">
+        <div class="dev-busca" id="dev-busca-${ws.id}" role="dialog" aria-label="Buscar no projeto">
+          <div class="dev-busca-head">
+            <span class="dev-busca-titulo">Buscar no projeto</span>
+            <button class="dev-icon-btn" type="button" data-busca="fechar" aria-label="Fechar busca" title="Fechar (Esc)"><svg class="dev-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+          </div>
+          <div class="dev-busca-modos" role="group" aria-label="Tipo de busca">
+            <button type="button" data-busca-modo="texto" aria-pressed="true">Texto</button>
+            <button type="button" data-busca-modo="nome" aria-pressed="false">Nome do arquivo</button>
+          </div>
+          <div class="dev-busca-campo">
+            <input class="dev-busca-input" type="text" aria-label="Termo da busca" placeholder="Buscar" spellcheck="false" autocomplete="off">
+            <button type="button" class="dev-busca-opt" data-busca-opt="diferenciar" aria-pressed="false" aria-label="Diferenciar maiúsculas" title="Diferenciar maiúsculas">Aa</button>
+            <button type="button" class="dev-busca-opt" data-busca-opt="palavra" aria-pressed="false" aria-label="Palavra inteira" title="Palavra inteira">ab</button>
+            <button type="button" class="dev-busca-opt" data-busca-opt="regex" aria-pressed="false" aria-label="Expressão regular" title="Expressão regular">.*</button>
+          </div>
+          <div class="dev-busca-dica">Respeita o .gitignore em repositório git e não segue links para fora do projeto.</div>
+          <div class="dev-busca-resumo" role="status" aria-live="polite"></div>
+          <div class="dev-busca-aviso" role="status"></div>
+          <div class="dev-busca-lista"></div>
+        </div>
+      </div>`;
     $('ws-host').appendChild(el);
     ws.el = el;
     ws.refs = {
@@ -281,6 +309,8 @@
       editors: el.querySelector('.dev-editors'),
     };
     ligarArrasteTerminais(ws);
+    ligarLegenda(ws);
+    ligarBusca(ws);
 
     el.querySelector('[data-act=open]').addEventListener('click', () => pickFolder(ws));
     el.querySelector('[data-act=refresh]').addEventListener('click', () => renderTree(ws));
@@ -703,18 +733,7 @@
     }
   }
 
-  // Five kinds only: folder, hidden (dot-files), config, LLM/docs (markdown) and plain files
-  const CONFIG_EXT = new Set(['json', 'jsonc', 'json5', 'yml', 'yaml', 'toml', 'ini', 'env', 'cfg', 'conf', 'config', 'xml', 'lock', 'properties', 'editorconfig']);
-  const LLM_EXT = new Set(['md', 'mdx', 'markdown', 'prompt']);
-  function fileKind(name, isDirectory) {
-    if (isDirectory) return name.startsWith('.') ? 'hidden-dir' : 'dir';
-    const lower = name.toLowerCase();
-    const ext = lower.includes('.') ? lower.split('.').pop() : '';
-    if (LLM_EXT.has(ext)) return 'llm';
-    if (CONFIG_EXT.has(ext) || /^\.env(\.|$)/.test(lower) || /rc$/.test(lower) && lower.startsWith('.')) return 'config';
-    if (lower.startsWith('.')) return 'hidden';
-    return 'file';
-  }
+  // O tipo do arquivo pelo nome (fileKind) mora em renderer/legenda-explorador.js, junto da legenda que o explica
 
   const SVG = {
     dir: '<path d="M1.5 3.5h4l1.5 1.5h7.5v8.5h-13z"/>',
@@ -787,7 +806,7 @@
       n.classList.remove('st-M', 'st-A', 'st-U', 'st-D', 'st-E', 'st-I');
       if (code) n.classList.add(`st-${code}`);
       // VS Code style: folders get a dot, files the status letter; ignored paths no badge
-      const badge = !code || code === 'I' ? '' : n.dataset.dir || code === 'E' ? '●' : code;
+      const badge = emblema(code, !!n.dataset.dir);
       n.querySelector('.dev-node-badge').textContent = badge;
       const isSub = subs.has(pl);
       if (isSub !== n.classList.contains('submodule')) {
@@ -1246,21 +1265,289 @@
     ws.refs.tree.querySelectorAll('.dev-node.dir').forEach(n => { if (n.dataset.path === ws.selecionado) n.classList.add('selecionado'); });
   }
 
+  // ── Legenda do explorador (balão aberto pelo "?") ────────────────────────────────────────────────────────────────
+  // Cada amostra é uma linha .dev-node de verdade (as mesmas classes da árvore): a cor mora só no styles.css, então a
+  // legenda não diverge. O texto ao lado diz a cor e o ícone por extenso.
+  function montarAmostra(item) {
+    const kind = fileKind(item.nome, item.ehPasta);
+    const row = document.createElement('div');
+    row.className = `dev-node dev-legenda-amostra k-${kind}${item.ehPasta ? ' dir' : ' file'}${item.submodulo ? ' submodule' : ''}${item.codigo ? ` st-${item.codigo}` : ''}${item.linha ? ` ${item.linha}` : ''}${item.recortado ? ' recortado' : ''}`;
+    row.setAttribute('aria-hidden', 'true'); // o texto ao lado carrega o significado
+    row.innerHTML = `<span class="dev-node-chevron">${item.ehPasta ? '▸' : ''}</span>
+      <span class="dev-node-icon">${nodeIcon(kind, false, !!item.submodulo, item.nome)}</span>
+      <span class="dev-node-name">${esc(item.nome)}</span>
+      <span class="dev-node-badge">${emblema(item.codigo, item.ehPasta)}</span>`;
+    return row;
+  }
+
+  function montarLegenda(balao) {
+    const topo = document.createElement('div');
+    topo.className = 'dev-legenda-topo';
+    topo.innerHTML = '<strong>Legenda do explorador</strong><span>Cada linha mostra como o item aparece na árvore: a cor do nome e o ícone, juntos.</span>';
+    balao.appendChild(topo);
+    let grupo = null;
+    for (const item of window.RendraLegenda.itens()) {
+      if (item.grupo !== grupo) {
+        grupo = item.grupo;
+        const h = document.createElement('div');
+        h.className = 'dev-legenda-grupo';
+        h.textContent = grupo;
+        balao.appendChild(h);
+      }
+      const linha = document.createElement('div');
+      linha.className = 'dev-legenda-item';
+      const caixa = document.createElement('div');
+      caixa.className = 'dev-legenda-caixa';
+      caixa.appendChild(montarAmostra(item));
+      const texto = document.createElement('div');
+      texto.className = 'dev-legenda-texto';
+      const forte = document.createElement('strong');
+      forte.textContent = item.rotulo;
+      texto.append(forte, document.createTextNode(` ${item.texto}`));
+      linha.append(caixa, texto);
+      balao.appendChild(linha);
+    }
+  }
+
+  // Fecha por Esc (captura, como os menus), clique fora e pelo próprio botão; o foco vai ao balão e volta ao botão
+  function ligarLegenda(ws) {
+    const btn = ws.el.querySelector('[data-act=legend]');
+    const balao = ws.el.querySelector('.dev-legenda');
+    let montado = false;
+    const aoTecla = ev => {
+      if (ev.key !== 'Escape' || !balao.offsetParent) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      fechar();
+    };
+    const aoClicar = ev => { if (!balao.contains(ev.target) && !btn.contains(ev.target)) fechar({ foco: false }); };
+    function fechar({ foco = true } = {}) {
+      if (!balao.classList.contains('aberta')) return;
+      balao.classList.remove('aberta');
+      btn.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('keydown', aoTecla, true);
+      document.removeEventListener('mousedown', aoClicar, true);
+      if (foco) btn.focus();
+    }
+    function abrir() {
+      if (!montado) { montarLegenda(balao); montado = true; }
+      balao.classList.add('aberta');
+      btn.setAttribute('aria-expanded', 'true');
+      document.addEventListener('keydown', aoTecla, true);
+      document.addEventListener('mousedown', aoClicar, true);
+      balao.focus();
+    }
+    btn.addEventListener('click', () => (balao.classList.contains('aberta') ? fechar() : abrir()));
+    ws.fecharLegenda = fechar;
+  }
+
+  // ── Busca no projeto (painel que desliza pela direita) ────────────────────────────────────────────────────────────
+  // Estado por workspace em ws.busca (memória): reabrir mostra o último termo e os resultados. O main faz a busca
+  // (dev:search); cada pedido é numerado e só a resposta do ÚLTIMO vale (a cancelada por outra busca não apaga o painel).
+  function ligarBusca(ws) {
+    const painel = ws.el.querySelector('.dev-busca');
+    const btn = ws.el.querySelector('[data-act=search]');
+    const input = painel.querySelector('.dev-busca-input');
+    const resumoEl = painel.querySelector('.dev-busca-resumo');
+    const avisoEl = painel.querySelector('.dev-busca-aviso');
+    const lista = painel.querySelector('.dev-busca-lista');
+    const b = ws.busca = { estado: MODELO_BUSCA.estadoInicial(), seq: 0, timer: null, origem: null, buscando: false, linhas: [], raiz: null };
+    const itemEl = i => lista.querySelector(`[data-i="${i}"]`);
+
+    function desenhar() {
+      const e = b.estado;
+      if (e.resposta && b.raiz !== ws.root?.root) e.resposta = null; // a pasta do projeto mudou: o resultado é de outra
+      painel.querySelectorAll('[data-busca-modo]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.buscaModo === e.modo)));
+      painel.querySelectorAll('[data-busca-opt]').forEach(x => { x.setAttribute('aria-pressed', String(!!e[x.dataset.buscaOpt])); x.disabled = e.modo === 'nome'; });
+      const valido = MODELO_BUSCA.termoValido(e);
+      let frase = '', aviso = '';
+      if (!ws.root) frase = 'Abra uma pasta para buscar.';
+      else if (b.buscando) frase = 'Buscando...';
+      else if (e.erro) frase = e.erro;
+      else if (!valido.ok) frase = valido.motivo;
+      else if (e.resposta) { const r = MODELO_BUSCA.resumo(e.resposta); frase = r.frase; aviso = [r.aviso, r.pulados].filter(Boolean).join(' '); }
+      resumoEl.textContent = frase;
+      resumoEl.classList.toggle('erro', !!e.erro && !b.buscando);
+      avisoEl.textContent = b.buscando ? '' : aviso;
+      avisoEl.classList.toggle('visivel', !!aviso && !b.buscando);
+      if (b.buscando) return; // enquanto busca, a lista anterior fica (sem piscar)
+      b.linhas = ws.root && valido.ok && !e.erro ? MODELO_BUSCA.linhasDoPainel(e.resposta, ws.root.root) : [];
+      lista.textContent = '';
+      b.linhas.forEach((l, i) => {
+        if (l.tipo === 'arquivo') {
+          const h = document.createElement('div');
+          h.className = 'dev-busca-arq';
+          const nome = document.createElement('span');
+          nome.className = 'dev-busca-arq-nome';
+          nome.textContent = baseName(l.rotulo);
+          const dir = document.createElement('span');
+          dir.className = 'dev-busca-arq-dir';
+          dir.textContent = l.rotulo.includes('/') ? l.rotulo.slice(0, l.rotulo.lastIndexOf('/')) : '';
+          const n = document.createElement('span');
+          n.className = 'dev-busca-arq-qtd';
+          n.textContent = String(l.quantidade);
+          h.append(nome, dir, n);
+          lista.appendChild(h);
+          return;
+        }
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'dev-busca-item';
+        item.dataset.i = String(i);
+        if (l.linha) {
+          item.setAttribute('aria-label', `${l.rotulo}, linha ${l.linha}: ${l.trecho}`);
+          const ln = document.createElement('span');
+          ln.className = 'dev-busca-ln';
+          ln.textContent = String(l.linha);
+          const trecho = document.createElement('span');
+          trecho.className = 'dev-busca-trecho';
+          for (const s of MODELO_BUSCA.segmentos(l.trecho, l.marcas)) {
+            if (s.marca) { const m = document.createElement('mark'); m.textContent = s.texto; trecho.appendChild(m); } else trecho.appendChild(document.createTextNode(s.texto));
+          }
+          item.append(ln, trecho);
+        } else {
+          item.setAttribute('aria-label', `Abrir ${l.rotulo}`);
+          const nome = document.createElement('span');
+          nome.className = 'dev-busca-arq-nome';
+          nome.textContent = baseName(l.rotulo);
+          const dir = document.createElement('span');
+          dir.className = 'dev-busca-arq-dir';
+          dir.textContent = l.rotulo.includes('/') ? l.rotulo.slice(0, l.rotulo.lastIndexOf('/')) : '';
+          item.append(nome, dir);
+        }
+        lista.appendChild(item);
+      });
+    }
+
+    async function executar() {
+      const e = b.estado;
+      clearTimeout(b.timer);
+      if (!ws.root || !MODELO_BUSCA.termoValido(e).ok) { desenhar(); return; }
+      const seq = ++b.seq;
+      b.buscando = true;
+      e.erro = null;
+      desenhar();
+      let res;
+      try {
+        res = await dev.search({ raiz: ws.root.root, modo: e.modo, termo: e.termo, diferenciar: e.diferenciar, palavra: e.palavra, regex: e.regex });
+      } catch { res = { erro: 'A busca falhou' }; }
+      if (seq !== b.seq) return; // chegou fora de ordem: só vale a resposta do último pedido
+      b.buscando = false;
+      if (res?.cancelada) { desenhar(); return; } // outra busca (de outro projeto) a cancelou: mantém o último resultado completo
+      if (res?.erro) { e.erro = res.erro; e.resposta = null; } else { e.resposta = res; b.raiz = ws.root.root; }
+      desenhar();
+    }
+
+    // termo mudou: busca em 300 ms; termo curto cancela o que estava em andamento e mostra a ajuda
+    input.addEventListener('input', () => {
+      const e = b.estado;
+      e.termo = input.value;
+      e.erro = null;
+      clearTimeout(b.timer);
+      if (MODELO_BUSCA.termoValido(e).ok) { b.timer = setTimeout(executar, 300); return; }
+      b.seq++;
+      if (b.buscando) dev.searchCancel();
+      b.buscando = false;
+      e.resposta = null;
+      desenhar();
+    });
+    painel.querySelectorAll('[data-busca-modo]').forEach(x => x.addEventListener('click', () => { b.estado.modo = x.dataset.buscaModo; executar(); }));
+    painel.querySelectorAll('[data-busca-opt]').forEach(x => x.addEventListener('click', () => { const k = x.dataset.buscaOpt; b.estado[k] = !b.estado[k]; executar(); }));
+    lista.addEventListener('click', ev => {
+      const item = ev.target.closest('.dev-busca-item');
+      const l = item && b.linhas[+item.dataset.i];
+      if (l) abrirResultadoDaBusca(ws, l.caminho, l.linha, l.coluna);
+    });
+    painel.querySelector('[data-busca=fechar]').addEventListener('click', () => fecharBusca(ws, { devolverFoco: true }));
+    btn.addEventListener('click', () => (painel.classList.contains('aberta') ? fecharBusca(ws, { devolverFoco: true }) : abrirBusca(ws)));
+
+    // Teclado DENTRO do painel (o listener global não vale aqui: o painel aberto com foco é "modal" para os atalhos da IDE).
+    // O Esc é escutado só no painel: com o foco no terminal ou no editor ele continua sendo do vim, da TUI e do Monaco.
+    painel.addEventListener('keydown', ev => {
+      if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); fecharBusca(ws, { devolverFoco: true }); return; }
+      if (RendraAtalhosIde.acaoDeAtalhoIde(ev, window.rendra.platform) === 'buscar') { ev.preventDefault(); input.focus(); input.select(); return; }
+      if (ev.key === 'Enter' && ev.target === input) { ev.preventDefault(); executar(); return; }
+      if ((ev.key === 'ArrowDown' || ev.key === 'ArrowUp') && !ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
+        const ativo = document.activeElement;
+        const atual = ativo === input ? -1 : ativo?.classList?.contains('dev-busca-item') ? +ativo.dataset.i : null;
+        if (atual === null) return;
+        ev.preventDefault();
+        const alvo = MODELO_BUSCA.proximoItem(b.linhas, atual, ev.key === 'ArrowDown' ? 1 : -1);
+        const el = alvo < 0 ? input : itemEl(alvo);
+        el?.focus();
+        if (el && el !== input) el.scrollIntoView({ block: 'nearest' });
+      }
+    });
+
+    b.desenhar = desenhar;
+    desenhar();
+  }
+
+  function abrirBusca(ws) {
+    const painel = ws.el.querySelector('.dev-busca');
+    if (!painel) return; // a página Terminal não tem explorador
+    ws.fecharLegenda?.({ foco: false });
+    if (!painel.classList.contains('aberta')) {
+      ws.busca.origem = painel.contains(document.activeElement) ? null : document.activeElement;
+      painel.classList.add('aberta');
+      ws.el.querySelector('[data-act=search]').setAttribute('aria-expanded', 'true');
+    }
+    const input = painel.querySelector('.dev-busca-input');
+    input.focus();
+    input.select();
+  }
+
+  // Esc e "Fechar busca" devolvem o foco a quem abriu; abrir um resultado deixa o foco no editor
+  function fecharBusca(ws, { devolverFoco = false } = {}) {
+    const painel = ws.el.querySelector('.dev-busca');
+    const b = ws.busca;
+    if (!painel || !painel.classList.contains('aberta')) return;
+    painel.classList.remove('aberta');
+    const btn = ws.el.querySelector('[data-act=search]');
+    btn.setAttribute('aria-expanded', 'false');
+    clearTimeout(b.timer);
+    if (b.buscando) { b.seq++; b.buscando = false; dev.searchCancel(); b.desenhar(); }
+    if (devolverFoco) {
+      const o = b.origem;
+      b.origem = null;
+      const alvo = o && o.isConnected && o !== document.body && typeof o.focus === 'function' ? o : btn;
+      alvo.focus();
+      if (document.activeElement !== alvo) btn.focus(); // quem abriu sumiu ou está oculto (terminal fechado): o foco vai ao botão
+    }
+  }
+
+  // Clique no resultado: abre o arquivo (na linha, se for texto), expande a árvore até ele e deixa nele a seleção de um clique
+  // na árvore: o arquivo fica ativo (aba ativa) e a PASTA dele fica selecionada (null na raiz). ws.selecionado é gravado antes
+  // do revelarNaArvore, que refaz a árvore (o renderDir reaplica a classe), e sobrevive ao watcher.
+  async function abrirResultadoDaBusca(ws, caminho, linha, coluna) {
+    fecharBusca(ws);
+    await openFile(ws, caminho);
+    irParaLinha(ws, caminho, linha, coluna);
+    ws.selecionado = window.RendraSelecaoArvore.aoClicar({ ehPasta: false, caminho }, { raiz: ws.root?.root, paiDe: parentOf });
+    if (ws.selecionado === ws.root?.root) ws.selecionado = null;
+    await revelarNaArvore(ws, caminho);
+    marcarSelecao(ws);
+  }
+
   // Clique num caminho do terminal (já conferido pelo main): arquivo abre no editor e vai à linha; pasta é
   // revelada no explorador (expande os ancestrais, rola até ela e a destaca por um instante).
   async function abrirCaminhoDoTerminal(ws, alvo, linha, coluna) {
     if (!alvo.isDir) {
       await openFile(ws, alvo.path);
-      const editor = ws.activeGroup?.editor;
-      if (editor && ws.activeGroup.active === alvo.path && files.has(alvo.path) && linha) { // aba de mídia não tem posição
-        const pos = { lineNumber: linha, column: coluna || 1 };
-        editor.setPosition(pos);
-        editor.revealLineInCenter(linha);
-        editor.focus();
-      }
+      irParaLinha(ws, alvo.path, linha, coluna);
       return;
     }
     await revelarNaArvore(ws, alvo.path, { abrirPasta: true });
+  }
+
+  // Põe o cursor na linha e na coluna do arquivo da aba ativa (aba de mídia ou "vista:" não tem posição) e foca o editor
+  function irParaLinha(ws, caminho, linha, coluna) {
+    const editor = ws.activeGroup?.editor;
+    if (editor && ws.activeGroup.active === caminho && files.has(caminho) && linha) {
+      editor.setPosition({ lineNumber: linha, column: coluna || 1 });
+      editor.revealLineInCenter(linha);
+      editor.focus();
+    }
   }
 
   // Expande os ancestrais (e a própria pasta, com abrirPasta), rola até o item e o destaca por um instante
@@ -2076,6 +2363,7 @@
           return false;
         }
         case 'atalho-ide':
+          if (a.acao === 'buscar' && paginaAtiva() !== 'page-devcode') return true; // a página Terminal não tem busca: a tecla é do programa
           ev.preventDefault(); // a escuta do document (captura) já executou a ação: aqui só não vira bytes
           return false;
         default:
@@ -2263,12 +2551,12 @@
     activateWorkspace(workspaces[Math.min(saved.active || 0, workspaces.length - 1)]);
   }
 
-  // ── Atalhos da IDE: Ctrl+Shift+T (novo terminal), Ctrl+O (abrir pasta, só fora do terminal), Ctrl+Tab (aba do editor) ──
+  // ── Atalhos da IDE: Ctrl+Shift+T (novo terminal), Ctrl+O (abrir pasta, só fora do terminal), Ctrl+Shift+F (busca), Ctrl+Tab (aba do editor) ──
   // A decisão é pura (RendraAtalhosIde, por sistema); aqui ficam a guarda de contexto e a execução. A escuta é na fase de
   // captura do document: vale com o foco no explorador, no editor ou no terminal (o handler do xterm só não deixa a tecla
   // virar bytes). Só nas páginas IDE e Terminal, sem janela modal ou menu aberto e sem foco num campo de texto.
   const paginaAtiva = () => document.querySelector('.page.active')?.id || '';
-  const modalAberto = () => !!document.querySelector('#settings-overlay.visible, #save-overlay.visible, #setup-overlay.visible, #novidades-overlay.visible, .dev-term-menu, .dev-ctx-menu');
+  const modalAberto = () => !!document.querySelector('#settings-overlay.visible, #save-overlay.visible, #setup-overlay.visible, #novidades-overlay.visible, .dev-term-menu, .dev-ctx-menu, .ws.active .dev-busca.aberta:focus-within, .ws.active .dev-legenda.aberta');
   const wsDaPagina = () => (paginaAtiva() === 'page-devcode' ? activeWs : paginaAtiva() === 'page-terminal' ? terminalPage : null);
   document.addEventListener('keydown', ev => {
     const ws = wsDaPagina();
@@ -2287,6 +2575,10 @@
       if (!ws.el.querySelector('[data-act=open]')) return; // a página Terminal não tem pasta: nada a fazer
       ev.preventDefault();
       if (!ev.repeat) pickFolder(ws);
+    } else if (acao === 'buscar') {
+      if (!ws.el.querySelector('[data-act=search]')) return; // a página Terminal não tem explorador: a tecla segue para o terminal
+      ev.preventDefault();
+      if (!ev.repeat) abrirBusca(ws);
     } else {
       ev.preventDefault();
       const grupo = ws.activeGroup;

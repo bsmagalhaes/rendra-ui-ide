@@ -151,6 +151,7 @@
         id: 'abrir-pasta', titulo: 'Abrir pasta', teclas: [k(c, 'O')],
         oQueFaz: mac ? 'Abre uma pasta no workspace, em qualquer lugar. O Control+O vai para o programa.' : 'Abre uma pasta no workspace quando o foco está fora do terminal (explorador, editor). Dentro do terminal, o Ctrl+O vai para o programa.',
       },
+      { id: 'buscar', titulo: 'Buscar no projeto', teclas: [k(c, 'Shift', 'F')], oQueFaz: 'Abre o painel de busca do explorador, por texto ou pelo nome do arquivo, também com o foco dentro de um terminal. Na página Terminal, que não tem explorador, a tecla vai para o programa.' },
       { id: 'proxima-aba', titulo: 'Próxima aba do editor', teclas: [k(mac ? 'Control' : 'Ctrl', 'Tab')], oQueFaz: 'Vai para a próxima aba de arquivo aberta, em círculo.' },
       { id: 'aba-anterior', titulo: 'Aba anterior do editor', teclas: [k(mac ? 'Control' : 'Ctrl', 'Shift', 'Tab')], oQueFaz: 'Volta para a aba de arquivo anterior, em círculo.' },
       { id: 'salvar', titulo: 'Salvar', teclas: [k(c, 'S')], oQueFaz: 'Salva o arquivo aberto no editor.' },

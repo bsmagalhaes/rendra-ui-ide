@@ -1,11 +1,14 @@
 /*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
-// Atalhos de teclado da IDE (novo terminal, abrir pasta, trocar de aba do editor). Módulo puro, carregado no
+// Atalhos de teclado da IDE (novo terminal, abrir pasta, buscar no projeto, trocar de aba do editor). Módulo puro, carregado no
 // renderer (window.RendraAtalhosIde) e nos testes (require). A escuta e as ações ficam em devcode.js.
 //
 // Regras (decisões do dono):
 //   - Novo terminal: Ctrl+Shift+T (Cmd+Shift+T no macOS).
 //   - Abrir pasta: Ctrl+O (Cmd+O no macOS) só com o foco FORA do terminal; dentro do terminal o Ctrl+O vai ao
 //     programa (o Claude Code usa para o transcript). No macOS o Cmd+O não é de nenhum programa: vale em todo lugar.
+//   - Buscar no projeto: Ctrl+Shift+F (Cmd+Shift+F no macOS), em qualquer foco da página IDE, também dentro do terminal e do
+//     editor (no Monaco o Ctrl+Shift+F de formatar não é usado). Na página Terminal, que não tem explorador, a tecla segue
+//     para o terminal: quem decide isso é o devcode.js.
 //   - Trocar de aba do editor: Ctrl+Tab (volta com Ctrl+Shift+Tab) nos três sistemas (Cmd+Tab é do macOS).
 (function (root) {
   // Ação do atalho, ou null. `foraDoTerminal` diz se o foco está fora do xterm (só o Ctrl+O depende disso).
@@ -19,6 +22,10 @@
     if (ev.code === 'KeyT') {
       if (mac) return meta && shift && !ctrl ? 'novo-terminal' : null;
       return ctrl && shift && !meta ? 'novo-terminal' : null;
+    }
+    if (ev.code === 'KeyF') {
+      if (mac) return meta && shift && !ctrl ? 'buscar' : null;
+      return ctrl && shift && !meta ? 'buscar' : null;
     }
     if (ev.code === 'KeyO' && !shift) {
       if (mac) return meta && !ctrl ? 'abrir-pasta' : null;

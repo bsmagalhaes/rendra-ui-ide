@@ -23,6 +23,20 @@ test('novo terminal: Ctrl+T sem Shift, Ctrl+Shift+T no macOS, Cmd+Shift+T fora d
   assert.strictEqual(acaoDeAtalhoIde(ev('KeyT', ['ctrl', 'shift', 'alt']), 'win32'), null);
 });
 
+test('buscar no projeto: Ctrl+Shift+F no Windows e no Linux, Cmd+Shift+F no macOS, com qualquer foco', () => {
+  for (const p of ['win32', 'linux']) {
+    assert.strictEqual(acaoDeAtalhoIde(ev('KeyF', ['ctrl', 'shift']), p), 'buscar');
+    assert.strictEqual(acaoDeAtalhoIde(ev('KeyF', ['ctrl', 'shift']), p, { foraDoTerminal: false }), 'buscar');
+    assert.strictEqual(acaoDeAtalhoIde(ev('KeyF', ['ctrl']), p), null, 'Ctrl+F é do editor e do terminal');
+    assert.strictEqual(acaoDeAtalhoIde(ev('KeyF', ['meta', 'shift']), p), null);
+    assert.strictEqual(acaoDeAtalhoIde(ev('KeyF', ['ctrl', 'shift', 'alt']), p), null);
+  }
+  assert.strictEqual(acaoDeAtalhoIde(ev('KeyF', ['meta', 'shift']), 'darwin'), 'buscar');
+  assert.strictEqual(acaoDeAtalhoIde(ev('KeyF', ['ctrl', 'shift']), 'darwin'), null);
+  assert.strictEqual(acaoDeAtalhoIde(ev('KeyF', ['meta']), 'darwin'), null);
+  assert.strictEqual(acaoDeAtalhoIde(ev('KeyT', ['ctrl', 'shift']), 'win32'), 'novo-terminal', 'o Ctrl+Shift+T segue igual');
+});
+
 test('abrir pasta: Ctrl+O só com o foco fora do terminal no Windows e no Linux', () => {
   for (const p of ['win32', 'linux']) {
     assert.strictEqual(acaoDeAtalhoIde(ev('KeyO', ['ctrl']), p, FORA), 'abrir-pasta');
@@ -117,8 +131,8 @@ test('abrir pasta só existe onde há o botão [data-act=open] (a página Termin
   assert.ok(ramo.indexOf('return;') < ramo.indexOf('ev.preventDefault()'), 'preventDefault antes da checagem do botão');
 });
 
-test('tecla segurada (repeat) é consumida mas não repete a ação', () => {
-  assert.strictEqual((bloco.match(/!ev\.repeat/g) || []).length, 3);
+test('tecla segurada (repeat) é consumida mas não repete a ação (novo terminal, abrir pasta e buscar)', () => {
+  assert.strictEqual((bloco.match(/!ev\.repeat/g) || []).length, 4);
 });
 
 test('Ctrl+Shift+O não existe: o Monaco mantém o "Ir para símbolo"', () => {

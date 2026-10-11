@@ -100,6 +100,15 @@ test('novo terminal e troca de aba por sistema', () => {
   }
 });
 
+test('buscar no projeto: Ctrl+Shift+F (Cmd+Shift+F no macOS) e o texto avisa da página Terminal', () => {
+  for (const { sistema, c } of todas) {
+    const i = c.blocos.find(b => b.id === 'ide').itens.find(x => x.id === 'buscar');
+    assert.strictEqual(C.rotulo(i.teclas), sistema === 'macos' ? 'Cmd+Shift+F' : 'Ctrl+Shift+F');
+    assert.match(i.oQueFaz, /nome do arquivo/);
+    assert.match(i.oQueFaz, /página Terminal/);
+  }
+});
+
 test('reordenar abas: arrastar e Ctrl+Shift+Seta esquerda ou direita, por sistema, para projetos, terminais e editor', () => {
   for (const { sistema, c } of todas) {
     const item = c.blocos.find(b => b.id === 'ide').itens.find(i => i.id === 'reordenar');
@@ -113,9 +122,9 @@ test('reordenar abas: arrastar e Ctrl+Shift+Seta esquerda ou direita, por sistem
   assert.match(renomear.oQueFaz, /terminal ou de um workspace/, 'o editor não renomeia: o item de renomear continua só para terminais e projetos');
 });
 
-test('a lista traz os atalhos antigos da IDE (F40 a F42) e nada além', () => {
+test('a lista traz os atalhos da IDE e nada além', () => {
   const ids = C.conteudo({ sistema: 'windows', agente: 'claude' }).blocos.find(b => b.id === 'ide').itens.map(i => i.id);
-  assert.deepStrictEqual(ids, ['novo-terminal', 'abrir-pasta', 'proxima-aba', 'aba-anterior', 'salvar', 'fechar-aba', 'dividir', 'atualizar', 'abrir-link', 'renomear', 'reordenar', 'esc', 'enter']);
+  assert.deepStrictEqual(ids, ['novo-terminal', 'abrir-pasta', 'buscar', 'proxima-aba', 'aba-anterior', 'salvar', 'fechar-aba', 'dividir', 'atualizar', 'abrir-link', 'renomear', 'reordenar', 'esc', 'enter']);
 });
 
 test('a ordem dos itens é igual entre chamadas', () => {
@@ -198,7 +207,7 @@ test('coerência: colar imagem cita a tecla que a IDE trata como colar imagem (W
 });
 
 test('coerência: as teclas da IDE são as que o reconhecedor de atalhos devolve', () => {
-  const alvo = { 'novo-terminal': 'novo-terminal', 'abrir-pasta': 'abrir-pasta', 'proxima-aba': 'proxima-aba', 'aba-anterior': 'aba-anterior' };
+  const alvo = { 'novo-terminal': 'novo-terminal', 'abrir-pasta': 'abrir-pasta', buscar: 'buscar', 'proxima-aba': 'proxima-aba', 'aba-anterior': 'aba-anterior' };
   for (const sistema of C.SISTEMAS) {
     for (const [id, acao] of Object.entries(alvo)) {
       const evs = combosDe(sistema, id);
@@ -217,7 +226,7 @@ test('coerência: o Ctrl+O listado não vira atalho da IDE dentro do terminal (W
 
 test('coerência: Ctrl+Shift+T e Ctrl+Tab listados valem também com o foco no terminal', () => {
   for (const sistema of C.SISTEMAS) {
-    for (const id of ['novo-terminal', 'proxima-aba', 'aba-anterior']) {
+    for (const id of ['novo-terminal', 'buscar', 'proxima-aba', 'aba-anterior']) {
       const [ev] = combosDe(sistema, id);
       assert.strictEqual(acaoDeTecla(ev, PLAT[sistema], 'bash').tipo, 'atalho-ide', `${sistema}/${id}`);
     }

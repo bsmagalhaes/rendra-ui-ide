@@ -25,6 +25,9 @@ const { comLimite: aoTeto } = require('./sessoes-io'); // roda o trabalho até o
 const agentesProc = require('./agentes-proc');
 const encerrarProc = require('./encerrar-proc');
 const { idValido } = require('../renderer/sessoes-escolha');
+const { Worker } = require('worker_threads');
+const { ordenarEntradas } = require('./ordem-arvore');
+const { limitar, montarMatcher, TERMO_MIN, TERMO_MAX } = require('./busca');
 
 const IS_WIN = process.platform === 'win32';
 const IS_MAC = process.platform === 'darwin';
@@ -286,10 +289,9 @@ function registerDevCode({ ipcMain, dialog, store, getWindow, userData, deps = {
   ipcMain.handle('dev:list', (_e, dir) => {
     try {
       const full = guard(dir);
-      return fs.readdirSync(full, { withFileTypes: true })
+      return ordenarEntradas(fs.readdirSync(full, { withFileTypes: true })
         .filter(d => !HIDDEN.has(d.name))
-        .map(d => ({ name: d.name, path: path.join(full, d.name), isDir: d.isDirectory() }))
-        .sort((a, b) => (b.isDir - a.isDir) || a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }));
+        .map(d => ({ name: d.name, path: path.join(full, d.name), isDir: d.isDirectory() })));
     } catch (e) {
       return { error: e.message };
     }
@@ -451,6 +453,102 @@ function registerDevCode({ ipcMain, dialog, store, getWindow, userData, deps = {
   }
 
   ipcMain.handle('dev:git-status', (_e, root) => (inside(root) ? gitStatus(path.resolve(root)) : null));
+
+  // ── Busca no projeto (painel do explorador) ─────────────────────────────────
+  // O renderer manda só { raiz, modo, termo, opções }: nunca lista nem caminho de arquivo. A raiz passa por guard + realpath;
+  // a lista vem do `git ls-files` (respeita o .gitignore) ou, fora de repositório, de um percurso por fs; o conteúdo é lido e
+  // casado numa thread à parte (src/busca-worker.js), que o main termina ao estourar o tempo. O main só COMPILA a expressão
+  // (valida e nunca executa). Uma busca nova cancela a anterior; o handler nunca lança.
+  let buscaAtual = null; // { cancelada, worker, parar }: `parar` encerra a busca em andamento (fase de listagem ou worker)
+  const cancelarBusca = () => { const c = buscaAtual; buscaAtual = null; if (c) c.parar(); };
+  const TEMPO = Symbol('tempo');
+
+  async function buscar(req) {
+    const inicio = Date.now();
+    const { raiz, modo, termo } = req || {};
+    if (typeof raiz !== 'string' || !raiz) return { erro: 'Pasta inválida' };
+    if (modo !== 'texto' && modo !== 'nome') return { erro: 'Modo de busca inválido' };
+    if (typeof termo !== 'string' || termo.length < TERMO_MIN) return { erro: `Digite pelo menos ${TERMO_MIN} caracteres` };
+    if (termo.length > TERMO_MAX) return { erro: 'Termo longo demais' };
+    const full = guard(raiz);
+    const opcoes = { termo, diferenciar: req.diferenciar === true, palavra: req.palavra === true, regex: req.regex === true };
+    if (modo === 'texto') { const m = montarMatcher(opcoes); if (!m.ok) return { erro: m.erro }; }
+    const dentroOk = await comLimite(realDentro(full).catch(() => false));
+    if (dentroOk === null) return { erro: 'Não foi possível acessar a pasta a tempo' };
+    const real = dentroOk ? await comLimite(fs.promises.realpath(full).catch(() => null)) : null;
+    if (!real) return { erro: 'Caminho fora das pastas abertas' };
+
+    cancelarBusca();
+    const ctl = { cancelada: false, worker: null, parar: () => { ctl.cancelada = true; } };
+    buscaAtual = ctl;
+    const limites = limitar(req.limites, { unc: !!wslInfoOf(full) });
+    const fim = inicio + limites.tempoMs;
+    const restante = () => Math.max(0, fim - Date.now());
+    // o teto de tempo conta desde a entrada do handler: a listagem do git corre contra o que sobra
+    const noPrazo = async promessa => {
+      let timer;
+      try { return await Promise.race([promessa, new Promise(r => { timer = setTimeout(() => r(TEMPO), restante()); })]); } finally { clearTimeout(timer); }
+    };
+    const resposta = (resultados, parcial, pulados) => ({
+      modo,
+      resultados,
+      total: modo === 'texto' ? resultados.reduce((n, r) => n + r.ocorrencias.length, 0) : resultados.length,
+      arquivos: resultados.length,
+      parcial,
+      limites: { ocorrencias: limites.ocorrencias, arquivos: limites.arquivos, tempoMs: limites.tempoMs },
+      pulados,
+      ms: Date.now() - inicio,
+    });
+    try {
+      // repositório? Só fora dele vale o percurso por fs; repositório cuja listagem falha dá erro (nunca ignora o .gitignore)
+      const dentroRepo = await noPrazo(git(full, ['rev-parse', '--is-inside-work-tree']));
+      if (ctl.cancelada) return { cancelada: true };
+      if (dentroRepo === TEMPO) return resposta([], 'tempo', 0);
+      const ehRepo = typeof dentroRepo === 'string' && dentroRepo.trim() === 'true';
+      let lista = null;
+      if (ehRepo) {
+        const saida = await noPrazo(git(full, ['-c', 'core.fsmonitor=false', 'ls-files', '-z', '--cached', '--others', '--exclude-standard']));
+        if (ctl.cancelada) return { cancelada: true };
+        if (saida === TEMPO) return resposta([], 'tempo', 0);
+        if (saida === null) return { erro: 'Não foi possível listar os arquivos do repositório' };
+        lista = [...new Set(saida.split('\0').filter(x => x && !x.endsWith('/')))]; // entrada com "/" é repositório aninhado
+      }
+      if (restante() <= 0) return resposta([], 'tempo', 0);
+      return await new Promise(resolve => {
+        const achados = [];
+        let pulados = 0;
+        let parcial = null;
+        let feito = false;
+        const worker = new Worker(deps.buscaWorker || path.join(__dirname, 'busca-worker.js'), { workerData: { raiz: full, raizReal: real, lista, modo, opcoes, limites, git: ehRepo } });
+        ctl.worker = worker;
+        let timer = null;
+        const concluir = r => {
+          if (feito) return;
+          feito = true;
+          clearTimeout(timer);
+          worker.terminate().catch(() => { }); // sem await: um worker preso em leitura de share parado só termina quando a chamada volta
+          resolve(r);
+        };
+        const montar = () => resposta(achados.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
+          .map(a => (modo === 'texto' ? { path: path.join(full, a.rel), ocorrencias: a.ocorrencias } : { path: path.join(full, a.rel) })), parcial, pulados);
+        ctl.parar = () => { ctl.cancelada = true; concluir({ cancelada: true }); };
+        timer = setTimeout(() => { parcial = 'tempo'; concluir(montar()); }, restante());
+        worker.on('message', m => {
+          if (m.tipo === 'arquivo') achados.push({ rel: m.caminho, ocorrencias: m.ocorrencias });
+          else if (m.tipo === 'fim') { pulados = m.pulados; parcial = m.parcial; concluir(montar()); }
+        });
+        worker.on('error', () => concluir({ erro: 'A busca falhou' }));
+        worker.on('exit', () => concluir(montar()));
+      });
+    } finally {
+      if (buscaAtual === ctl) buscaAtual = null;
+    }
+  }
+
+  ipcMain.handle('dev:search', async (_e, req) => {
+    try { return await buscar(req); } catch (e) { return { erro: e?.message || 'A busca falhou' }; }
+  });
+  ipcMain.handle('dev:search-cancel', () => { cancelarBusca(); return true; });
 
   // One recursive watcher per open folder; bursts of events (builds, git) collapse into one update
   const watchers = new Map(); // lower root → { watcher, timer }

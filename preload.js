@@ -70,6 +70,9 @@ contextBridge.exposeInMainWorld('rendra', {
     onFsChanged: (cb) => ipcRenderer.on('dev:fs-changed', (_e, msg) => cb(msg)),
     resolvePath: (texto, cwd, root, shell) => ipcRenderer.invoke('dev:resolve-path', { texto, cwd, root, shell }),
     read: (file) => ipcRenderer.invoke('dev:read', file),
+    // busca no projeto: { raiz, modo: 'texto' | 'nome', termo, diferenciar, palavra, regex } -> { modo, resultados, total, arquivos, parcial, pulados, ms } | { erro } | { cancelada: true }
+    search: (args) => ipcRenderer.invoke('dev:search', args),
+    searchCancel: () => ipcRenderer.invoke('dev:search-cancel'),
     write: (file, content) => ipcRenderer.invoke('dev:write', file, content),
     createFile: (parent, name) => ipcRenderer.invoke('dev:create-file', parent, name),
     createDir: (parent, name) => ipcRenderer.invoke('dev:create-dir', parent, name),
