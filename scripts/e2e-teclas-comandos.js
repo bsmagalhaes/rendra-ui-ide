@@ -33,16 +33,48 @@ function pngBase64(w, h) {
 }
 
 // ── Sandbox ─────────────────────────────────────────────────────────────────
-function sandbox() {
+// Distro WSL para os casos de ambiente (a primeira que não é do Docker); null sem WSL
+function distroWsl() {
+  if (!WIN) return null;
+  try {
+    const s = execFileSync('wsl.exe', ['-l', '-q'], { encoding: 'utf16le', timeout: 20000, windowsHide: true });
+    return s.split(/\r?\n/).map(x => x.replace(/\0/g, '').trim()).find(n => n && !/^docker-desktop/i.test(n)) || null;
+  } catch { return null; }
+}
+// ambientes: true cria também uma pasta DENTRO da distro (\\wsl.localhost\<distro>\tmp\rendra-e2e-<n>\proj, removida no fim) e
+// três projetos: 'win' (a pasta demo no Windows), 'win-wsl' (a MESMA pasta aberta no WSL, via Windows) e 'unc' (a pasta da distro)
+function sandbox({ ambientes = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rendra-e2e-teclas-'));
   const home = path.join(dir, 'home'), data = path.join(dir, 'data'), projeto = path.join(home, 'projetos', 'demo');
   escreve(path.join(projeto, 'a.txt'), 'arquivo a\n');
   escreve(path.join(projeto, 'b.txt'), 'arquivo b\n');
+  const lista = [{ name: 'demo', custom: false, cols: 1, root: projeto, groups: [] }];
+  const sb = { dir, home, data, projeto };
+  let uncBase = null;
+  if (ambientes) {
+    const distro = distroWsl();
+    if (!distro) sb.semWsl = true;
+    else {
+      const id = `rendra-e2e-${Date.now() % 1e7}`;
+      uncBase = `\\\\wsl.localhost\\${distro}\\tmp\\${id}`;
+      sb.distro = distro; sb.id = id; sb.unc = `${uncBase}\\proj`; sb.uncLinux = `/tmp/${id}/proj`;
+      fs.mkdirSync(sb.unc, { recursive: true });
+      const linux = '/mnt/' + projeto[0].toLowerCase() + projeto.slice(2).replace(/\\/g, '/');
+      lista.length = 0;
+      lista.push({ name: 'win', custom: true, cols: 1, root: projeto, groups: [] },
+        { name: 'win-wsl', custom: true, cols: 1, root: projeto, wsl: { distro, linuxPath: linux }, groups: [] },
+        { name: 'unc', custom: true, cols: 1, root: sb.unc, groups: [] });
+      sb.projetoLinux = linux;
+    }
+  }
   escreve(path.join(data, 'rendra-config.json'), JSON.stringify({
     settings: { refreshInterval: 600 }, filters: { days: 30, projects: [] }, setup: { dismissed: true },
-    devcode: { workspaces: { list: [{ name: 'demo', custom: false, cols: 1, root: projeto, groups: [] }], active: 0 } },
+    devcode: { workspaces: { list: lista, active: 0 } },
   }, null, 2));
-  return { dir, home, data, projeto, limpa: () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* em uso */ } } };
+  return Object.assign(sb, { limpa: () => {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* em uso */ }
+    if (uncBase) { try { fs.rmSync(uncBase, { recursive: true, force: true }); } catch { /* distro parada */ } } // só a pasta criada aqui
+  } });
 }
 
 // ── CDP ─────────────────────────────────────────────────────────────────────
@@ -69,7 +101,7 @@ async function alvo(porta, tipo) {
 
 // ── App ─────────────────────────────────────────────────────────────────────
 const REQ = `((process.mainModule && process.mainModule.require) || (typeof require === 'function' ? require : null))`;
-async function abrir(sb) {
+async function abrir(sb, { semEspiaoPasta = false } = {}) {
   const porta = 9400 + Math.floor(Math.random() * 400), portaMain = porta + 1000;
   const electron = require(path.join(ROOT, 'node_modules', 'electron'));
   const env = { ...process.env, RENDRA_E2E_HIDDEN: '1', RENDRA_DATA_DIR: sb.data, RENDRA_HOME: sb.home, CODEX_HOME: path.join(sb.home, '.codex') };
@@ -112,7 +144,7 @@ async function abrir(sb) {
     const ls = ipcMain.listeners('pty:write'); ipcMain.removeAllListeners('pty:write');
     ipcMain.on('pty:write', (e, m) => { globalThis.__escritas.push({ t: Date.now(), data: m && m.data }); for (const l of ls) l(e, m); });
     const h = ipcMain._invokeHandlers && ipcMain._invokeHandlers.get && ipcMain._invokeHandlers.get('dev:open-folder');
-    if (h) ipcMain._invokeHandlers.set('dev:open-folder', async () => { globalThis.__abrirPasta++; return null; });
+    if (h && !${semEspiaoPasta}) ipcMain._invokeHandlers.set('dev:open-folder', async () => { globalThis.__abrirPasta++; return null; });
     return JSON.stringify({ ls: ls.length, abrirPasta: !!h });
   })()`);
   app.espiao = JSON.parse(r);
@@ -170,6 +202,19 @@ async function novoTerminal(app, { manterPainel = false, shell = null } = {}) {
   await sleep(600);
   return ULTIMO;
 }
+// Terminal no WSL pelo menu do Bash (seletor em Git Bash ou, sem ele, na entrada Bash): clica o item "Bash (WSL ...)"
+// ou, se a IDE abriu direto (uma distro e nenhum Git Bash), só espera o terminal. false quando não há opção de WSL.
+async function abrirWsl(app) {
+  const ok = await app.ev(`(() => { const s = document.querySelector('.ws.active .dev-shell-select'); const k = ['gitbash', 'bash-wsl'].find(x => [...s.options].some(o => o.value === x)); if (!k) return false; s.value = k; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+  if (!ok) return false;
+  const antes = await app.ev(`document.querySelectorAll('.ws.active .term-pane').length`);
+  await app.ev(`(() => { const el = [...document.querySelectorAll('.ws.active [data-act="new-term"]')].find(e => e.offsetParent !== null); el.click(); return true; })()`);
+  await sleep(700);
+  const i = await app.ev(`[...document.querySelectorAll('.dev-term-menu button')].findIndex(b => /^Bash \\(WSL /.test(b.textContent))`);
+  if (i >= 0) await app.ev(`document.querySelector('.dev-term-menu button[data-i="${i}"]').click()`);
+  else if (await app.ev(`!!document.querySelector('.dev-term-menu')`)) { await tecla(app, { key: 'Escape', code: 'Escape', vk: 27 }); return false; }
+  return app.espera(`document.querySelectorAll('.ws.active .term-pane').length === ${antes + 1}`, 20000, 'terminal WSL aberto').then(() => true, () => false);
+}
 async function foco(app, alvoEl = ULTIMO) {
   const r = await app.ev(`(() => { const r = (${alvoEl}).querySelector('.term-pane-body').getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; })()`);
   const x = r.x + r.w / 2, y = r.y + r.h / 2;
@@ -199,7 +244,7 @@ const fotografa = async (app, nome) => {
 
 // ── Casos (cada tarefa acrescenta o seu) ────────────────────────────────────
 const casos = [];
-const caso = (nome, fn) => casos.push({ nome, fn });
+const caso = (nome, fn, opt = {}) => casos.push({ nome, fn, opt });
 
 caso('T1', async app => {
   console.log('\n[T1] Ctrl+V cola o texto da área de transferência real (antes falhava: availableFormats inexistente)');
@@ -613,9 +658,7 @@ caso('T7', async app => {
     afirma(JSON.stringify(await bytesDoAltV()) === JSON.stringify(['\x1bv']), `Alt+V no ${shell} (Windows nativo) entrega ESC v, o Alt+V do Claude Code`);
   }
   // WSL: a segunda opção do menu de novo terminal
-  const temWsl = await app.ev(`(() => { const el = [...document.querySelectorAll('.ws.active [data-act="new-term"]')].find(e => e.offsetParent !== null); el.click(); return true; })()`).then(async () => { await sleep(700); return app.ev(`!!document.querySelector('.dev-term-menu button[data-i="1"]')`); });
-  if (!temWsl) { if (await app.ev(`!!document.querySelector('.dev-term-menu')`)) await app.ev(`document.querySelector('.dev-term-menu button[data-i="0"]').click()`); pula('T7', 'WSL indisponível: sem a opção de terminal WSL'); return; }
-  await app.ev(`document.querySelector('.dev-term-menu button[data-i="1"]').click()`);
+  if (!(await abrirWsl(app))) { pula('T7', 'WSL indisponível: sem a opção de terminal WSL'); return; }
   await app.espera(PROMPT(ULTIMO), 40000, 'prompt do WSL');
   if (await app.espera(`!!(${ULTIMO}).querySelector('.term-agentes')`, 4000).catch(() => false)) await app.ev(`(${ULTIMO}).querySelector('.term-agentes button[data-nova="terminal"]').click()`);
   await foco(app);
@@ -644,10 +687,7 @@ caso('T8', async app => {
   };
   await rodaBash('Git Bash', () => novoTerminal(app, { shell: 'gitbash' }));
   await rodaBash('WSL', async () => {
-    await app.ev(`(() => { const el = [...document.querySelectorAll('.ws.active [data-act="new-term"]')].find(e => e.offsetParent !== null); el.click(); return true; })()`);
-    await sleep(700);
-    if (!(await app.ev(`!!document.querySelector('.dev-term-menu button[data-i="1"]')`))) { if (await app.ev(`!!document.querySelector('.dev-term-menu')`)) await app.ev(`document.querySelector('.dev-term-menu button[data-i="0"]').click()`); throw new Error('sem a opção WSL'); }
-    await app.ev(`document.querySelector('.dev-term-menu button[data-i="1"]').click()`);
+    if (!(await abrirWsl(app))) throw new Error('sem a opção WSL');
     await app.espera(PROMPT(ULTIMO), 40000, 'prompt do WSL');
     if (await app.espera(`!!(${ULTIMO}).querySelector('.term-agentes')`, 4000).catch(() => false)) await app.ev(`(${ULTIMO}).querySelector('.term-agentes button[data-nova="terminal"]').click()`);
     await sleep(400);
@@ -749,15 +789,157 @@ caso('T12', async app => {
 
 // ── Execução ────────────────────────────────────────────────────────────────
 // cada caso roda num app novo e numa sandbox nova: sem terminais, arquivos e estado herdados do caso anterior
+// ── Ambiente do projeto e ambiente do terminal (D1 a D4, D6): casos com projeto na distro ──────────────────────────
+// Cada caso lê o que o shell REAL mostra (Get-Location, cd, pwd), nunca o que a IDE diz ter feito.
+const ativaAba = async (app, nome) => {
+  await app.ev(`document.querySelector('.ws-tab[aria-label="${nome}"]').click()`);
+  await app.espera(`document.querySelector('.ws-tab.active')?.getAttribute('aria-label') === '${nome}'`, 8000, `aba ${nome} ativa`);
+  await sleep(500);
+};
+const escolheShell = (app, chave) => app.ev(`(() => { const s = document.querySelector('.ws.active .dev-shell-select'); if (![...s.options].some(o => o.value === '${chave}')) return false; s.value = '${chave}'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+const clicaNovoTerminal = app => app.ev(`(() => { const el = [...document.querySelectorAll('.ws.active [data-act="new-term"]')].find(e => e.offsetParent !== null); el.click(); return true; })()`);
+const nPaineis = app => app.ev(`document.querySelectorAll('.ws.active .term-pane').length`);
+// com a linha impressa pelo shell: roda o comando e espera uma linha INTEIRA igual ao esperado (o prompt e o eco do comando não casam)
+async function rodaELe(app, comando, esperado, ms = 15000) {
+  await foco(app);
+  await digita(app, comando); await enter(app);
+  const casa = l => (esperado instanceof RegExp ? esperado.test(l) : l === esperado);
+  const fim = Date.now() + ms; let linhas = [];
+  while (Date.now() < fim) { await sleep(300); linhas = (await textoTerm(app)).split('\n').map(l => l.trim()).filter(Boolean); if (linhas.some(casa)) return { ok: true, linhas }; }
+  return { ok: false, linhas };
+}
+// abre sem menu (PowerShell, CMD): o clique cria o terminal direto
+async function abreDireto(app, shell) {
+  if (!(await escolheShell(app, shell))) throw new Error(`shell ${shell} indisponível`);
+  const antes = await nPaineis(app);
+  await clicaNovoTerminal(app);
+  await sleep(700);
+  const menu = await app.ev(`!!document.querySelector('.dev-term-menu')`);
+  await app.espera(`document.querySelectorAll('.ws.active .term-pane').length === ${antes + 1}`, 20000, 'terminal aberto');
+  await app.espera(PROMPT(ULTIMO), 30000, 'prompt do shell');
+  const painel = await app.espera(`!!(${ULTIMO}).querySelector('.term-agentes')`, 6000).catch(() => false);
+  if (painel) { await app.ev(`(${ULTIMO}).querySelector('.term-agentes button[data-nova="terminal"]').click()`); await sleep(300); }
+  await sleep(500);
+  return { menu };
+}
+const menuAtual = app => app.ev(`({ rotulos: [...document.querySelectorAll('.dev-term-menu button')].map(b => b.textContent.trim()), foco: document.activeElement && document.activeElement.closest('.dev-term-menu') ? document.activeElement.textContent.trim() : null })`);
+
+caso('T20', async (app, sb) => {
+  console.log('\n[T20] D3: PowerShell e CMD abrem direto no Windows em projeto do WSL; o Bash pergunta e a distro do projeto vem focada');
+  await ativaAba(app, 'unc');
+  const r1 = await abreDireto(app, 'powershell');
+  afirma(!r1.menu, 'PowerShell em projeto do WSL: nenhum menu');
+  const ps = await rodaELe(app, '(Get-Location).ProviderPath', sb.unc);
+  afirma(ps.ok, `PowerShell abriu no Windows na pasta UNC do projeto (${sb.unc})`);
+  if (!ps.ok) console.log(ps.linhas.slice(-6).join('\n'));
+  await fotografa(app, 't20-powershell-em-projeto-wsl');
+  const r2 = await abreDireto(app, 'cmd');
+  afirma(!r2.menu, 'CMD em projeto do WSL: nenhum menu');
+  // /tmp não é unidade: o pushd mapeia uma letra temporária (Z:\tmp\...); o CMD nunca cai em C:\Windows
+  const cmd = await rodaELe(app, 'cd', new RegExp(`^[A-Z]:\\\\tmp\\\\${sb.id}\\\\proj$`, 'i'));
+  afirma(cmd.ok, 'CMD entrou na pasta do projeto pela letra temporária do pushd');
+  if (!cmd.ok) console.log(cmd.linhas.slice(-6).join('\n'));
+  // Bash: pergunta, com o foco no ambiente do projeto
+  const ok = await escolheShell(app, 'gitbash') || await escolheShell(app, 'bash-wsl');
+  if (!ok) { pula('T20', 'sem Git Bash e sem entrada Bash'); return; }
+  const antes = await nPaineis(app);
+  await clicaNovoTerminal(app);
+  await sleep(700);
+  const m = await menuAtual(app);
+  console.log(`  menu: ${JSON.stringify(m)}`);
+  afirma(m.rotulos.some(l => l === `Bash (WSL ${sb.distro})`), `o menu do Bash tem a distro do projeto: ${JSON.stringify(m.rotulos)}`);
+  afirma(m.foco === `Bash (WSL ${sb.distro})`, `o foco está na distro do projeto (${m.foco})`);
+  await fotografa(app, 't20-menu-bash-projeto-wsl');
+  await tecla(app, { key: 'Enter', code: 'Enter', vk: 13, text: '\r' });
+  await app.espera(`document.querySelectorAll('.ws.active .term-pane').length === ${antes + 1}`, 20000, 'Enter abre o terminal da distro');
+  await app.espera(PROMPT(ULTIMO), 40000, 'prompt do WSL');
+  if (await app.espera(`!!(${ULTIMO}).querySelector('.term-agentes')`, 4000).catch(() => false)) { await app.ev(`(${ULTIMO}).querySelector('.term-agentes button[data-nova="terminal"]').click()`); await sleep(300); }
+  const wsl = await rodaELe(app, 'pwd', sb.uncLinux);
+  afirma(wsl.ok, `o terminal da distro abriu na pasta do projeto vista de dentro dela (${sb.uncLinux})`);
+  await fotografa(app, 't20-terminal-wsl-em-projeto-wsl');
+  // projeto do Windows: o foco volta para o Git Bash (ou para a primeira distro sem Git Bash)
+  await ativaAba(app, 'win');
+  await clicaNovoTerminal(app);
+  await sleep(700);
+  const w = await menuAtual(app);
+  afirma(w.foco === (w.rotulos[0] || ''), `em projeto do Windows o foco é o primeiro item: ${JSON.stringify(w)}`);
+  await tecla(app, { key: 'Escape', code: 'Escape', vk: 27 });
+}, { ambientes: true });
+
+caso('T21', async (app, sb) => {
+  console.log('\n[T21] D1 e D6: a mesma pasta em duas abas com ambientes diferentes; cada terminal na pasta certa do seu ambiente');
+  // aba do Windows: PowerShell na pasta Windows; foco do menu do Bash no Git Bash
+  await ativaAba(app, 'win');
+  await abreDireto(app, 'powershell');
+  const a = await rodaELe(app, '(Get-Location).ProviderPath', path.resolve(sb.projeto));
+  afirma(a.ok, `aba Windows: PowerShell na pasta do projeto (${sb.projeto})`);
+  // aba do MESMO projeto marcada como WSL (via Windows): o PowerShell continua sendo do Windows (o projeto não força o WSL)
+  await ativaAba(app, 'win-wsl');
+  const marca = await app.ev(`!!document.querySelector('.ws-tab.active .ws-tab-badge')`);
+  afirma(marca, 'a segunda aba mostra o selo WSL e a primeira não');
+  await abreDireto(app, 'powershell');
+  const b = await rodaELe(app, '(Get-Location).ProviderPath', path.resolve(sb.projeto));
+  afirma(b.ok, 'aba WSL, terminal PowerShell: pasta do projeto no Windows');
+  // o terminal da distro nessa aba: /mnt/<letra>/... (a pasta do Windows vista de dentro)
+  if (!(await abrirWsl(app))) { pula('T21', 'sem opção de WSL'); return; }
+  await app.espera(PROMPT(ULTIMO), 40000, 'prompt do WSL');
+  if (await app.espera(`!!(${ULTIMO}).querySelector('.term-agentes')`, 4000).catch(() => false)) { await app.ev(`(${ULTIMO}).querySelector('.term-agentes button[data-nova="terminal"]').click()`); await sleep(300); }
+  const c = await rodaELe(app, 'pwd', sb.projetoLinux);
+  afirma(c.ok, `aba WSL, terminal da distro: ${sb.projetoLinux}`);
+  await fotografa(app, 't21-mesma-pasta-dois-ambientes');
+  // as duas abas seguem vivas, cada uma com os seus terminais
+  const quantos = await app.ev(`[...document.querySelectorAll('.ws')].map(w => w.querySelectorAll('.term-pane').length)`);
+  afirma(quantos[0] === 1 && quantos[1] === 2, `terminais por aba: ${JSON.stringify(quantos)} (1 no Windows; 2 na aba WSL)`);
+}, { ambientes: true });
+
+caso('T22', async (app, sb) => {
+  console.log('\n[T22] D2: abrir a pasta como "Windows" depois de tê-la aberto no WSL abre no Windows');
+  // o diálogo nativo é trocado no main: devolve sempre a pasta do projeto; o handler dev:open-folder é o real
+  await app.mev(`(() => { const { dialog } = ${REQ}('electron'); dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [${JSON.stringify(sb.projeto)}] }); return true; })()`);
+  await ativaAba(app, 'win-wsl');
+  afirma(await app.ev(`!!document.querySelector('.ws-tab.active .ws-tab-badge')`), 'a aba começa marcada como WSL');
+  await app.ev(`document.querySelector('.ws.active [data-act="open"]').click()`);
+  await app.espera(`document.getElementById('save-overlay').classList.contains('visible')`, 8000, 'pergunta Onde está o projeto?');
+  await app.ev(`document.querySelector('#save-overlay [data-choice="windows"]').click()`);
+  await app.espera(`!document.querySelector('.ws-tab.active .ws-tab-badge')`, 8000, 'selo WSL some');
+  afirma(true, 'escolher Windows abriu a mesma pasta sem o selo WSL');
+  await fotografa(app, 't22-aberta-como-windows');
+  await abreDireto(app, 'powershell');
+  const r = await rodaELe(app, '(Get-Location).ProviderPath', path.resolve(sb.projeto));
+  afirma(r.ok, 'o terminal dessa aba abre no Windows, em C:\\...');
+}, { ambientes: true, semEspiaoPasta: true });
+
+caso('T23', async (app, sb) => {
+  console.log('\n[T23] D4 e A1: o CMD real com a linha do pushd; pasta que não abre mostra a mensagem, pasta hostil não executa nada');
+  const { argsCmdUnc, VAR_PASTA_CMD, MSG_CMD_UNC } = require(path.join(ROOT, 'renderer', 'terminal-escolha.js'));
+  // o CMD escreve em página de código OEM: confere pelo fim da mensagem, que é ASCII
+  const FIM_MSG = 'Use o PowerShell ou o Bash.';
+  const roda = pasta => {
+    const marca = path.join(os.tmpdir(), `rendra-e2e-injecao-${Date.now()}.txt`);
+    const env = { ...process.env, [VAR_PASTA_CMD]: pasta };
+    const r = require('child_process').spawnSync('cmd.exe', [argsCmdUnc()], { env, windowsVerbatimArguments: true, encoding: 'utf8', input: '', timeout: 30000 });
+    return { saida: `${r.stdout || ''}${r.stderr || ''}`, marca };
+  };
+  const nada = roda(`\\\\wsl.localhost\\${sb.distro}\\tmp\\nao-existe-${Date.now()}`);
+  afirma(nada.saida.includes(FIM_MSG), 'pushd que falha mostra a mensagem da D4');
+  const marcaArq = path.join(os.tmpdir(), `rendra-e2e-injecao-${Date.now()}.txt`);
+  const hostil = roda(`\\\\wsl.localhost\\${sb.distro}\\tmp\\a&echo x>"${marcaArq}"&%PATH%&!x!`);
+  afirma(hostil.saida.includes(FIM_MSG), 'pasta com & % e ! cai na mensagem');
+  afirma(!fs.existsSync(marcaArq), 'o & do nome da pasta não executou nada (nenhum arquivo criado)');
+  const certa = roda(sb.unc);
+  afirma(!certa.saida.includes(FIM_MSG), 'pasta que existe: o pushd entra e a mensagem não aparece');
+}, { ambientes: true });
+
 (async () => {
   for (const c of casos) {
     if (FILTRO && !FILTRO.some(f => c.nome === f)) continue;
-    const sb = sandbox();
+    const sb = sandbox(c.opt);
     let app;
     try {
-      app = await abrir(sb);
+      if (c.opt.ambientes && sb.semWsl) { pula(c.nome, 'sem distro WSL nesta máquina'); continue; }
+      app = await abrir(sb, c.opt);
       afirma(app.espiao.ls >= 1 && app.espiao.abrirPasta, `espiões instalados no main: ${JSON.stringify(app.espiao)}`);
-      await c.fn(app);
+      await c.fn(app, sb);
     } catch (e) {
       afirma(false, `${c.nome} lançou: ${e.stack || e.message}`);
     } finally {

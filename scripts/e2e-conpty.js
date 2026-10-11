@@ -91,10 +91,12 @@ async function rodada(dll) {
     await sleep(300);
 
     for (const alvoShell of ['PowerShell', 'WSL']) {
+      // o seletor da barra escolhe o terminal: PowerShell abre direto; o Bash pergunta entre Git Bash e as distros
+      await ev(`(() => { const s = document.querySelector('.ws.active .dev-shell-select'); const ks = ${alvoShell === 'WSL' ? "['gitbash', 'bash-wsl']" : "['powershell']"}; const k = ks.find(x => [...s.options].some(o => o.value === x)); if (k) { s.value = k; s.dispatchEvent(new Event('change', { bubbles: true })); } return true; })()`);
+      const antes = await ev(`document.querySelectorAll('.ws.active .term-pane').length`); // antes do clique: sem menu o terminal já nasce com ele
       await ev(`(() => { const el = [...document.querySelectorAll('.ws.active [data-act="new-term"]')].find(e => e.offsetParent !== null); el.click(); return true; })()`);
       await sleep(600);
       const rotulos = await ev(`[...document.querySelectorAll('.dev-term-menu button')].map(b => b.textContent.trim())`);
-      const antes = await ev(`document.querySelectorAll('.ws.active .term-pane').length`);
       if (rotulos.length) {
         const i = rotulos.findIndex(l => (alvoShell === 'WSL' ? /wsl|ubuntu/i : /powershell/i).test(l));
         if (!afirma(i >= 0, `menu de terminal tem ${alvoShell}: ${JSON.stringify(rotulos)}`)) continue;

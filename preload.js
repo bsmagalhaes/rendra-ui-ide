@@ -68,7 +68,7 @@ contextBridge.exposeInMainWorld('rendra', {
     watch: (root) => ipcRenderer.invoke('dev:watch', root),
     unwatch: (root) => ipcRenderer.invoke('dev:unwatch', root),
     onFsChanged: (cb) => ipcRenderer.on('dev:fs-changed', (_e, msg) => cb(msg)),
-    resolvePath: (texto, cwd, root) => ipcRenderer.invoke('dev:resolve-path', { texto, cwd, root }),
+    resolvePath: (texto, cwd, root, shell) => ipcRenderer.invoke('dev:resolve-path', { texto, cwd, root, shell }),
     read: (file) => ipcRenderer.invoke('dev:read', file),
     write: (file, content) => ipcRenderer.invoke('dev:write', file, content),
     createFile: (parent, name) => ipcRenderer.invoke('dev:create-file', parent, name),

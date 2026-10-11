@@ -291,7 +291,7 @@ async function main() {
       await sleep(700);
     };
     for (const name of ['src', 'lib', 'pages', 'Checkout.tsx']) await clickNode(name);
-    // Nenhum terminal abre sozinho: abre dois, como o usuário faria (com WSL o botão mostra o menu, e Windows é o primeiro item)
+    // Nenhum terminal abre sozinho: abre dois, como o usuário faria (com o seletor em PowerShell o terminal abre direto, sem menu)
     for (let n = 0; n < 2; n++) {
       await ev(`[...document.querySelectorAll('#page-devcode [data-act="new-term"]')].find(b => b.offsetParent)?.click()`);
       await sleep(600);

@@ -10,7 +10,7 @@ const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const HIDDEN = new Set(['.git']);
 
 const os = require('os');
-const { caminhoNoWsl } = require('../renderer/terminal-escolha');
+const { caminhoNoWsl, caminhoNoWindows, argsCmdUnc, VAR_PASTA_CMD } = require('../renderer/terminal-escolha');
 const { ambienteDoTerminal } = require('../renderer/sessoes-escolha');
 const { validarNome } = require('../renderer/novo-item');
 const { ambientePty } = require('./terminal-env');
@@ -115,6 +115,7 @@ function opcoesConpty(isWin, settings) {
 // `userData`: pasta de dados do app (o registro de terminais vivos mora nela); sem ela não há registro
 function registerDevCode({ ipcMain, dialog, store, getWindow, userData, deps = {} }) {
   const listDistros = deps.listWslDistros || listWslDistros;
+  const isDirDeps = deps.isDir || isDir; // os testes trocam: não há pasta UNC de verdade neles
   const wakeDistro = deps.wakeWslDistro || wakeWslDistro;
   const loadPty = deps.loadPty || (() => require('@lydell/node-pty'));
   const roots = new Set(); // lower-cased absolute folders the renderer may touch
@@ -128,11 +129,13 @@ function registerDevCode({ ipcMain, dialog, store, getWindow, userData, deps = {
   // the /mnt/<drive>/… path. lower root → { distro, linuxPath }
   const wslMounted = new Map();
 
+  // O `wsl` devolvido vem só do caminho (UNC) ou DESTA abertura (`viaWsl`): abrir a pasta como "Windows" nunca herda a
+  // marca de uma abertura anterior no WSL. `wslMounted` segue gravado como tabela de tradução (wslFor).
   const addRoot = (dir, viaWsl) => {
     const full = path.resolve(dir);
     roots.add(norm(full));
-    if (viaWsl?.distro && viaWsl?.linuxPath) wslMounted.set(norm(full), { distro: viaWsl.distro, linuxPath: viaWsl.linuxPath });
-    const mounted = wslMounted.get(norm(full));
+    const mounted = viaWsl?.distro && viaWsl?.linuxPath ? { distro: viaWsl.distro, linuxPath: viaWsl.linuxPath } : null;
+    if (mounted) wslMounted.set(norm(full), mounted);
     const wsl = wslInfoOf(full) || (mounted ? { ...mounted, viaWindows: true } : null);
     return { root: full, name: path.basename(full) || full, wsl };
   };
@@ -179,6 +182,19 @@ function registerDevCode({ ipcMain, dialog, store, getWindow, userData, deps = {
     return wslCache;
   };
   ipcMain.handle('dev:wsl-info', () => wslInfo());
+
+  // Distro pedida por um shell `wsl:<nome>` (vem do renderer): só vale uma distribuição instalada, e só então o nome vira
+  // argumento do wsl.exe ou entra na pasta lida. Uma regra só, usada por pty:create, resolverAmbiente e dev:resolve-path.
+  // Devolve { distro } (nome da lista), { error }, ou null quando o shell não é `wsl:` ou não estamos no Windows.
+  // `soCache`: nunca roda `wsl -l -v` de novo (caminho quente, um link por passada do mouse); nome fora do cache = nenhum.
+  async function distroPedida(shellKey, { soCache = false } = {}) {
+    if (!IS_WIN || typeof shellKey !== 'string' || !shellKey.startsWith('wsl:')) return null;
+    const pedido = shellKey.slice(4).trim().toLowerCase();
+    const acha = info => info.distros.find(d => d.name.toLowerCase() === pedido);
+    // lista em cache; só se o nome não está nela confere de novo (distro instalada depois de aberto o app)
+    const d = acha(await wslInfo()) || (soCache ? null : acha(await wslInfo(true)));
+    return d ? { distro: d.name } : { error: `Distribuição WSL "${shellKey.slice(4)}" não encontrada` };
+  }
 
   // ── Windows folder "mounted" for a distro ──────────────────────────────────
   // The first time someone opens via WSL they can point at their Windows projects folder.
@@ -300,11 +316,15 @@ function registerDevCode({ ipcMain, dialog, store, getWindow, userData, deps = {
       return (await realDentro(alvo)) ? { isDir: st.isDirectory(), isFile: st.isFile() } : null;
     } catch { return null; }
   })());
-  ipcMain.handle('dev:resolve-path', async (_e, { texto, cwd, root } = {}) => {
+  // `shell` (opcional): o shell do terminal. Com ele o ambiente dos links é o do terminal (wsl:<distro> conferida no cache,
+  // senão Windows); sem ele vale o do projeto, como sempre.
+  ipcMain.handle('dev:resolve-path', async (_e, { texto, cwd, root, shell } = {}) => {
     try {
       const bases = [cwd, root].map(b => (typeof b === 'string' && b && inside(b) ? path.resolve(b) : null));
-      const wsl = (bases[0] && wslFor(bases[0])) || (bases[1] && wslFor(bases[1])) || null;
-      const lista = candidatosDoCaminho(texto, { cwd: bases[0], root: bases[1], isWin: IS_WIN, distro: wsl?.distro || null, home: HOME });
+      let distro;
+      if (typeof shell === 'string' && shell) distro = (await distroPedida(shell, { soCache: true }))?.distro || null;
+      else distro = ((bases[0] && wslFor(bases[0])) || (bases[1] && wslFor(bases[1])) || null)?.distro || null;
+      const lista = candidatosDoCaminho(texto, { cwd: bases[0], root: bases[1], isWin: IS_WIN, distro, home: HOME });
       for (const alvo of lista) {
         if (!inside(alvo)) continue;
         const st = await statComLimite(alvo);
@@ -483,45 +503,62 @@ function registerDevCode({ ipcMain, dialog, store, getWindow, userData, deps = {
     try {
       pty = pty || loadPty();
       const home = HOME;
-      const wsl = cwd && inside(cwd) ? wslFor(cwd) : null;
-      if (wsl) await wakeDistro(wsl.distro); // on failure the terminal still opens and shows WSL's own error
-      const dir = wsl ? path.resolve(cwd) : (cwd && isDir(cwd) && inside(cwd) ? path.resolve(cwd) : home);
-      // WSL workspace → always a Linux login shell in the distro, started in the project folder
+      // O SHELL decide o ambiente do terminal; o projeto só traduz a pasta (D1). O nome `wsl:<distro>` vem do renderer:
+      // só vale uma distribuição instalada, em todos os ramos (distroPedida)
+      const pedido = await distroPedida(shellKey);
+      if (pedido?.error) return { error: pedido.error };
+      const distro = pedido ? pedido.distro : null;
+      const dentro = !!(cwd && inside(cwd));
+      const unc = dentro ? wslInfoOf(cwd) : null; // projeto em \\wsl.localhost\...
+      // acorda a distro do terminal WSL e a do projeto UNC (a pasta UNC só responde com ela de pé); se falhar, o terminal
+      // abre e mostra o erro do próprio WSL
+      const acordar = distro || (unc && unc.distro);
+      if (acordar) await wakeDistro(acordar);
+      const dir = dentro && (isDirDeps(cwd) || (distro && unc)) ? path.resolve(cwd) : home;
       const shells = availableShells();
-      // Terminal pedido no WSL num projeto do Windows: wsl.exe na pasta do projeto vista de dentro da distro
-      // O nome vem do renderer: só vale uma distribuição instalada (nunca vira argumento do wsl.exe sem conferir)
-      let pedidoWsl = null;
-      if (!wsl && IS_WIN && typeof shellKey === 'string' && shellKey.startsWith('wsl:')) {
-        const pedido = shellKey.slice(4).trim().toLowerCase();
-        const acha = info => info.distros.find(d => d.name.toLowerCase() === pedido);
-        // lista em cache; só se o nome não está nela confere de novo (distro instalada depois de aberto o app)
-        const distro = acha(await wslInfo()) || acha(await wslInfo(true));
-        if (!distro) return { error: `Distribuição WSL "${shellKey.slice(4)}" não encontrada` };
-        pedidoWsl = distro.name;
+      let sh, cwdSpawn = dir, envExtra = null;
+      if (distro) {
+        // wsl.exe na pasta do projeto vista de dentro da distro: o linuxPath do projeto (UNC ou pasta montada) quando a
+        // distro é a dele, senão a unidade em /mnt; UNC de outra distro e fora de pasta: '~'
+        const mesma = d => String(d).toLowerCase() === distro.toLowerCase();
+        let linux = null;
+        if (dir !== home) {
+          const alvo = wslFor(dir);
+          linux = unc ? (mesma(unc.distro) ? unc.linuxPath : null) : (alvo && mesma(alvo.distro) ? alvo.linuxPath : caminhoNoWsl(dir));
+        }
+        sh = { key: 'wsl', label: `WSL ${distro}`, file: 'wsl.exe', args: ['-d', distro, '--cd', linux || '~'] };
+        if (unc) cwdSpawn = home; // wsl.exe recebe a pasta Linux por --cd
+      } else {
+        sh = shells.find(s => s.key === shellKey) || shells[0];
+        const uncDir = dir !== home ? wslInfoOf(dir) : null;
+        if (sh.key === 'cmd' && uncDir) {
+          // o CMD não tem pasta atual UNC: letra de unidade se a pasta é /mnt/<letra>, senão pushd (letra temporária) com a
+          // mensagem da D4 se falhar. O caminho vai por variável de ambiente, nunca dentro da linha de comando.
+          const unidade = caminhoNoWindows(uncDir.linuxPath);
+          if (unidade && isDirDeps(unidade)) cwdSpawn = unidade;
+          // aspas no caminho fechariam as do pushd depois da expansão: nunca vão (o caminho vazio faz o pushd falhar e mostrar a mensagem)
+          else { cwdSpawn = home; sh = { ...sh, args: argsCmdUnc() }; envExtra = { [VAR_PASTA_CMD]: dir.includes('"') ? '' : dir }; }
+        }
       }
-      const sh = wsl
-        ? { key: 'wsl', label: `WSL ${wsl.distro}`, file: 'wsl.exe', args: ['-d', wsl.distro, '--cd', wsl.linuxPath] }
-        : pedidoWsl
-          ? { key: 'wsl', label: `WSL ${pedidoWsl}`, file: 'wsl.exe', args: ['-d', pedidoWsl, '--cd', cwd && dir !== home ? (caminhoNoWsl(dir) || '~') : '~'] }
-          : (shells.find(s => s.key === shellKey) || shells[0]);
       // marca do terminal: quem herda RENDRA_TERM nasceu dele, e é por ela que o fechamento acha a sessão Linux (WSL)
       const marca = crypto.randomBytes(8).toString('hex');
       const proc = pty.spawn(sh.file, sh.args, {
         name: 'xterm-256color',
         cols: Math.max(20, cols | 0 || 80),
         rows: Math.max(5, rows | 0 || 24),
-        cwd: wsl ? home : dir, // wsl.exe gets the Linux folder via --cd
+        cwd: cwdSpawn,
         // advertise a full-color terminal so CLIs (git, ls, npm, rtk…) emit colors and emoji
-        env: ambientePty(process.env, { wsl: sh.key === 'wsl', marca }),
+        env: { ...ambientePty(process.env, { wsl: sh.key === 'wsl', marca }), ...envExtra },
         ...opcoesConpty(IS_WIN, store.get('settings', {})),
       });
       const shell = sh.label;
       const id = nextPtyId++;
       ptys.set(id, proc);
-      ciclo.registrar(id, proc, { token: marca, distro: sh.key === 'wsl' ? (wsl ? wsl.distro : pedidoWsl) : null });
+      ciclo.registrar(id, proc, { token: marca, distro });
       proc.onData(data => send('pty:data', { id, data }));
       proc.onExit(({ exitCode }) => { ptys.delete(id); ciclo.saiu(id); send('pty:exit', { id, exitCode }); });
-      return { id, shell, shellKey: sh.key, cwd: dir };
+      // `cwd` é sempre a pasta do PROJETO (dentro das raízes): vira t.cwd, base dos links relativos, mesmo no CMD que abriu em outra
+      return { id, shell, shellKey: sh.key, cwd: dir, distro };
     } catch (e) {
       return { error: e.message };
     }
@@ -533,19 +570,13 @@ function registerDevCode({ ipcMain, dialog, store, getWindow, userData, deps = {
   async function resolverAmbiente({ shell, cwd } = {}) {
     if (!cwd || typeof cwd !== 'string') return { vazio: true }; // terminal avulso: sem pasta, sem lista
     if (!inside(cwd)) return { vazio: true, error: 'Pasta fora das pastas abertas' };
-    const wsl = wslFor(cwd);
+    const wsl = wslFor(cwd); // só a tradução da pasta; quem decide o ambiente é o shell do terminal
     let shellKey = typeof shell === 'string' ? shell : '';
-    if (!wsl && shellKey.startsWith('wsl:')) {
-      if (!IS_WIN) shellKey = '';
-      else {
-        const pedido = shellKey.slice(4).trim().toLowerCase();
-        const acha = info => info.distros.find(d => d.name.toLowerCase() === pedido);
-        const distro = acha(await wslInfo()) || acha(await wslInfo(true));
-        if (!distro) return { vazio: true, error: `Distribuição WSL "${shellKey.slice(4)}" não encontrada` };
-        shellKey = `wsl:${distro.name}`;
-      }
-    }
-    if (!wsl && !isDir(cwd)) return { vazio: true };
+    const pedido = await distroPedida(shellKey); // em todos os ramos, também em projeto WSL
+    if (pedido?.error) return { vazio: true, error: pedido.error };
+    if (pedido) shellKey = `wsl:${pedido.distro}`;
+    else if (shellKey.startsWith('wsl:')) shellKey = ''; // fora do Windows não há distro
+    if (!wsl && !isDirDeps(cwd)) return { vazio: true };
     const amb = ambienteDoTerminal({ cwd: path.resolve(cwd), wsl, shell: shellKey });
     if (!amb) return { vazio: true };
     let distroRodando = true;

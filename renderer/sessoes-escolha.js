@@ -52,14 +52,23 @@
     return SEM_TITULO;
   }
 
-  // Ambiente do terminal (uma regra só). `wsl` é o alvo já resolvido pelo main (wslFor), nunca o do renderer.
+  // Ambiente do terminal (uma regra só): o SHELL do terminal decide, o projeto só traduz a pasta. `wsl` é o alvo do
+  // projeto já resolvido pelo main (wslFor), nunca o do renderer; `shell` é o shell do terminal (já conferido).
+  //  - `wsl:<distro>`: tipo wsl; a pasta é o linuxPath do projeto quando a distro é a dele, senão a unidade em /mnt
+  //    (null para UNC de outra distro, que ela não enxerga);
+  //  - outro shell: tipo windows, na pasta do projeto no Windows (UNC literal em projeto UNC);
+  //  - sem shell: vale a regra antiga (o wsl do projeto decide).
   function ambienteDoTerminal({ cwd, wsl, shell } = {}) {
     if (!cwd || typeof cwd !== 'string') return null;
-    if (wsl && wsl.distro && wsl.linuxPath) return { tipo: 'wsl', distro: wsl.distro, cwd: wsl.linuxPath };
-    if (typeof shell === 'string' && shell.startsWith('wsl:')) {
+    const alvo = wsl && wsl.distro && wsl.linuxPath ? wsl : null;
+    if (typeof shell === 'string' && shell) {
+      if (!shell.startsWith('wsl:')) return { tipo: 'windows', distro: null, cwd };
+      const distro = shell.slice(4);
+      if (alvo && String(alvo.distro).toLowerCase() === distro.toLowerCase()) return { tipo: 'wsl', distro, cwd: alvo.linuxPath };
       const linux = TE.caminhoNoWsl(cwd);
-      return linux ? { tipo: 'wsl', distro: shell.slice(4), cwd: linux } : null;
+      return linux ? { tipo: 'wsl', distro, cwd: linux } : null;
     }
+    if (alvo) return { tipo: 'wsl', distro: alvo.distro, cwd: alvo.linuxPath };
     return { tipo: 'windows', distro: null, cwd };
   }
 

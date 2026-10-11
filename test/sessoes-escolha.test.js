@@ -95,8 +95,18 @@ test('opcoesNovaSessao: 0, 1 ou 2 provedores', () => {
 
 test('ambienteDoTerminal: a regra única dos três casos', () => {
   const wslVia = { distro: 'Ubuntu-24.04', linuxPath: '/mnt/d/SOEs/V' };
-  assert.deepStrictEqual(E.ambienteDoTerminal({ cwd: 'D:\\SOEs\\V', wsl: wslVia, shell: 'powershell' }), { tipo: 'wsl', distro: 'Ubuntu-24.04', cwd: '/mnt/d/SOEs/V' });
-  assert.deepStrictEqual(E.ambienteDoTerminal({ cwd: '\\\\wsl.localhost\\U\\home\\u\\p', wsl: { distro: 'U', linuxPath: '/home/u/p' }, shell: 'powershell' }), { tipo: 'wsl', distro: 'U', cwd: '/home/u/p' });
+  const unc = { distro: 'U', linuxPath: '/home/u/p' };
+  const uncCwd = '\\\\wsl.localhost\\U\\home\\u\\p';
+  // o shell do terminal decide, o projeto só traduz a pasta
+  assert.deepStrictEqual(E.ambienteDoTerminal({ cwd: 'D:\\SOEs\\V', wsl: wslVia, shell: 'powershell' }), { tipo: 'windows', distro: null, cwd: 'D:\\SOEs\\V' });
+  assert.deepStrictEqual(E.ambienteDoTerminal({ cwd: 'D:\\SOEs\\V', wsl: wslVia, shell: 'wsl:Ubuntu-24.04' }), { tipo: 'wsl', distro: 'Ubuntu-24.04', cwd: '/mnt/d/SOEs/V' });
+  assert.deepStrictEqual(E.ambienteDoTerminal({ cwd: 'D:\\SOEs\\V', wsl: wslVia, shell: 'wsl:Debian' }), { tipo: 'wsl', distro: 'Debian', cwd: '/mnt/d/SOEs/V' }, 'outra distro: a unidade em /mnt');
+  assert.deepStrictEqual(E.ambienteDoTerminal({ cwd: uncCwd, wsl: unc, shell: 'powershell' }), { tipo: 'windows', distro: null, cwd: uncCwd }, 'UNC com shell do Windows: o UNC literal');
+  assert.deepStrictEqual(E.ambienteDoTerminal({ cwd: uncCwd, wsl: unc, shell: 'wsl:u' }), { tipo: 'wsl', distro: 'u', cwd: '/home/u/p' });
+  assert.strictEqual(E.ambienteDoTerminal({ cwd: uncCwd, wsl: unc, shell: 'wsl:Debian' }), null, 'UNC de outra distro: ela não enxerga');
+  // sem shell na chamada: o wsl do projeto decide, como antes
+  assert.deepStrictEqual(E.ambienteDoTerminal({ cwd: 'D:\\SOEs\\V', wsl: wslVia }), { tipo: 'wsl', distro: 'Ubuntu-24.04', cwd: '/mnt/d/SOEs/V' });
+  assert.deepStrictEqual(E.ambienteDoTerminal({ cwd: uncCwd, wsl: unc, shell: '' }), { tipo: 'wsl', distro: 'U', cwd: '/home/u/p' });
   assert.deepStrictEqual(E.ambienteDoTerminal({ cwd: 'D:\\SOEs\\X', wsl: null, shell: 'wsl:Ubuntu-24.04' }), { tipo: 'wsl', distro: 'Ubuntu-24.04', cwd: '/mnt/d/SOEs/X' });
   assert.deepStrictEqual(E.ambienteDoTerminal({ cwd: 'D:\\SOEs\\X', wsl: null, shell: 'powershell' }), { tipo: 'windows', distro: null, cwd: 'D:\\SOEs\\X' });
   assert.strictEqual(E.ambienteDoTerminal({ cwd: null, wsl: null, shell: 'powershell' }), null);

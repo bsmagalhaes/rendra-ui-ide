@@ -96,33 +96,51 @@ test('shell wsl:<distro desconhecida> é recusado e nada é consultado', win, as
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('workspace WSL "via Windows": distro e linuxPath do workspace (não o /mnt recalculado), subpasta soma o relativo', win, async () => {
+test('workspace WSL "via Windows": o shell decide; no wsl:<distro> vale o linuxPath do workspace (não o /mnt recalculado) e a subpasta soma o relativo', win, async () => {
   const dir = temp();
   try {
     fs.mkdirSync(path.join(dir, 'sub'));
     const t = montar({ workspaces: [{ root: dir, wsl: { distro: 'Ubuntu-24.04', linuxPath: '/mnt/personalizado/proj' } }] });
     await t.pedir({ shell: 'powershell', cwd: dir });
-    assert.deepStrictEqual(t.chamadas[0].amb, { tipo: 'wsl', distro: 'Ubuntu-24.04', cwd: '/mnt/personalizado/proj' });
-    await t.pedir({ shell: 'wsl:Outra', cwd: path.join(dir, 'sub') });
-    assert.deepStrictEqual(t.chamadas[1].amb, { tipo: 'wsl', distro: 'Ubuntu-24.04', cwd: '/mnt/personalizado/proj/sub' }, 'o shell pedido não muda o ambiente de um workspace WSL');
+    assert.deepStrictEqual(t.chamadas[0].amb, { tipo: 'windows', distro: null, cwd: path.resolve(dir) }, 'terminal Windows no mesmo projeto: ambiente Windows');
+    await t.pedir({ shell: 'wsl:Ubuntu-24.04', cwd: path.join(dir, 'sub') });
+    assert.deepStrictEqual(t.chamadas[1].amb, { tipo: 'wsl', distro: 'Ubuntu-24.04', cwd: '/mnt/personalizado/proj/sub' }, 'a montagem personalizada vale para o terminal WSL');
+    const r = await t.pedir({ shell: 'wsl:Outra', cwd: path.join(dir, 'sub') });
+    assert.ok(r.error, 'distro fora da lista é recusada também em workspace via Windows');
+    assert.strictEqual(t.chamadas.length, 2);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('workspace UNC da distro: linuxPath nativo', win, async () => {
+test('workspace UNC da distro: terminal Windows lê a pasta UNC, terminal wsl:<distro> o linuxPath nativo; distro forjada é recusada', win, async () => {
   const unc = '\\\\wsl.localhost\\Ubuntu-24.04\\home\\u\\proj';
   const t = montar({ workspaces: [{ root: unc }] });
   await t.pedir({ shell: 'powershell', cwd: unc });
-  assert.deepStrictEqual(t.chamadas[0].amb, { tipo: 'wsl', distro: 'Ubuntu-24.04', cwd: '/home/u/proj' });
+  assert.deepStrictEqual(t.chamadas[0].amb, { tipo: 'windows', distro: null, cwd: unc }, 'UNC literal no Windows');
+  await t.pedir({ shell: 'wsl:Ubuntu-24.04', cwd: unc });
+  assert.deepStrictEqual(t.chamadas[1].amb, { tipo: 'wsl', distro: 'Ubuntu-24.04', cwd: '/home/u/proj' });
+  const r = await t.pedir({ shell: 'wsl:Forjada', cwd: unc });
+  assert.ok(r.error);
+  assert.strictEqual(t.chamadas.length, 2);
+});
+
+test('mesmo projeto, dois terminais: cada shell recebe o seu ambiente (D1)', win, async () => {
+  const unc = '\\\\wsl.localhost\\Ubuntu-24.04\\home\\u\\proj';
+  const t = montar({ workspaces: [{ root: unc }] });
+  await t.pedir({ shell: 'powershell', cwd: unc });
+  await t.pedir({ shell: 'wsl:Ubuntu-24.04', cwd: unc });
+  assert.deepStrictEqual(t.chamadas.map(c => c.amb.tipo), ['windows', 'wsl']);
+  assert.notDeepStrictEqual(t.chamadas[0].amb, t.chamadas[1].amb);
 });
 
 test('distro parada ou ausente da lista: o orquestrador recebe distroRodando falso, ou nada é chamado', win, async () => {
   const dir = temp();
   try {
     const parada = montar({ workspaces: [{ root: dir, wsl: { distro: 'Ubuntu-24.04', linuxPath: '/mnt/c/x' } }], distros: [{ name: 'Ubuntu-24.04', state: 'Stopped' }] });
-    await parada.pedir({ shell: 'powershell', cwd: dir });
+    await parada.pedir({ shell: 'wsl:Ubuntu-24.04', cwd: dir });
     assert.strictEqual(parada.chamadas[0].distroRodando, false);
     const ausente = montar({ workspaces: [{ root: dir, wsl: { distro: 'Sumiu', linuxPath: '/mnt/c/x' } }] });
-    const r = await ausente.pedir({ shell: 'powershell', cwd: dir });
+    const r = await ausente.pedir({ shell: 'wsl:Sumiu', cwd: dir });
+    assert.ok(r.error, 'distro fora da lista é recusada');
     assert.deepStrictEqual(r.sessoes, []);
     assert.strictEqual(ausente.chamadas.length, 0);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
@@ -132,9 +150,9 @@ test('a lista de distros vem do cache do wslInfo: distro rodando não gera um `w
   const dir = temp();
   try {
     const t = montar({ workspaces: [{ root: dir, wsl: { distro: 'Ubuntu-24.04', linuxPath: '/mnt/c/x' } }] });
-    await t.pedir({ shell: 'powershell', cwd: dir });
-    await t.pedir({ shell: 'powershell', cwd: dir });
-    await t.pedir({ shell: 'powershell', cwd: dir });
+    await t.pedir({ shell: 'wsl:Ubuntu-24.04', cwd: dir });
+    await t.pedir({ shell: 'wsl:Ubuntu-24.04', cwd: dir });
+    await t.pedir({ shell: 'wsl:Ubuntu-24.04', cwd: dir });
     assert.strictEqual(t.listagens(), 1);
     assert.strictEqual(t.chamadas.length, 3);
     assert.strictEqual(t.chamadas[2].distroRodando, true);

@@ -1,5 +1,14 @@
 # Novidades
 
+## Próxima versão
+### Windows e WSL no mesmo projeto
+- O terminal agora segue o shell que você escolhe, e o projeto só diz em que pasta ele abre. No mesmo projeto convivem terminais do Windows e do WSL, cada um na pasta do projeto vista no ambiente dele: a pasta do Windows vira `/mnt/c/...` no WSL, e a pasta `\\wsl.localhost\...` do WSL vira o mesmo caminho no Windows. Você não precisa dar `cd`.
+- O seletor de shell da barra manda de verdade. PowerShell e CMD abrem direto no Windows, sem menu, também em projeto do WSL (antes, em projeto do WSL todo terminal abria no WSL). Se o seu hábito era abrir o terminal do WSL com o seletor em PowerShell, escolha Git Bash ou Bash no seletor.
+- O Bash pergunta onde abrir: Git Bash (Windows) ou Bash em cada distro do WSL, com o ambiente do projeto já selecionado (Enter abre). Sem Git Bash, o seletor ganha a entrada Bash, que abre no WSL. Se só existe um dos dois, abre direto. No macOS e no Linux nada muda.
+- Escolher "Windows" ao abrir uma pasta abre no Windows, mesmo que você já a tenha aberto no WSL antes. A mesma pasta pode ficar em duas abas, uma no Windows e outra no WSL, e cada aba guarda o seu ambiente.
+- O CMD do Windows não aceita uma pasta `\\wsl.localhost\...` como pasta atual. A IDE usa a letra de unidade quando a pasta está em `/mnt/<letra>`, senão o `pushd`, que mapeia uma letra temporária (ela fica ocupada até o CMD fechar). Se nem isso for possível, o terminal mostra uma mensagem explicando.
+- Cada ambiente tem as suas conversas e a sua conta: o seletor de conversas e a marca "em uso" seguem o ambiente do terminal em que você está, e os caminhos que viram link no terminal também.
+
 ## 1.8.0 · 08/10/2026
 ### Imagens, áudio, vídeo e PDF no editor
 - Clicar numa imagem, num áudio, num vídeo ou num PDF do explorador abre uma aba no painel do editor, com o visualizador ou o player. As abas de mídia ficam junto das de texto, fecham com Ctrl+W, voltam quando você reabre a IDE e não têm o que salvar. Outros arquivos que não são texto (zip, exe e parecidos) continuam sem abrir, e agora a IDE diz isso com uma mensagem clara.

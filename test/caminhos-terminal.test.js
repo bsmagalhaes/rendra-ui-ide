@@ -89,7 +89,7 @@ function montar(raiz, deps = {}) {
   const dados = new Map([['devcode.workspaces', { list: [{ name: 'w', root: raiz }], active: 0 }]]);
   registerDevCode({ ipcMain: { handle: (n, f) => handlers.set(n, f), on() {}, once() {}, removeHandler() {} }, dialog: {}, store: { get: k => dados.get(k), set: (k, v) => dados.set(k, v), delete: k => dados.delete(k) }, getWindow: () => null, deps });
   handlers.get('dev:load-workspaces')({});
-  const f = (texto, cwd, root) => handlers.get('dev:resolve-path')({}, { texto, cwd, root });
+  const f = (texto, cwd, root, shell) => handlers.get('dev:resolve-path')({}, { texto, cwd, root, shell });
   f.ler = file => handlers.get('dev:read')({}, file);
   return f;
 }
@@ -170,4 +170,25 @@ test('dev:read: não segue junção para fora da pasta aberta; leitura normal e 
   assert.deepStrictEqual(await ler(path.join(raiz, 'interna', 'i.txt')), { content: 'interno' });
   assert.ok((await ler(path.join(fora, 'segredo.txt'))).error, 'fora léxico: recusado');
   assert.ok((await ler(path.join(raiz, 'nao-existe.txt'))).error);
+});
+
+test('dev:resolve-path com o shell do terminal: o link segue o ambiente do terminal, não o do projeto', { skip: process.platform !== 'win32' }, async () => {
+  const uncRaiz = '\\\\wsl.localhost\\Ubuntu\\home\\u\\proj';
+  const alvo = uncRaiz + '\\a.txt';
+  let listagens = 0;
+  const listWslDistros = async () => { listagens++; return ['Ubuntu', 'Debian'].map(name => ({ name, state: 'Running', version: 2, isDefault: false })); };
+  const resolve = montar(uncRaiz, { listWslDistros });
+  // só o arquivo do projeto existe (a pasta UNC é de mentira: nenhuma distro é tocada)
+  const { stat, realpath } = fs.promises;
+  fs.promises.stat = async p => { if (p === alvo) return { isDirectory: () => false, isFile: () => true }; throw new Error('ENOENT'); };
+  fs.promises.realpath = async p => p;
+  try {
+    assert.deepStrictEqual(await resolve('/home/u/proj/a.txt', uncRaiz, uncRaiz, 'wsl:Ubuntu'), { path: alvo, isDir: false }, 'terminal da mesma distro: vira link');
+    assert.strictEqual(await resolve('/home/u/proj/a.txt', uncRaiz, uncRaiz, 'wsl:Debian'), null, 'terminal de outra distro: o caminho não aponta para o arquivo do projeto');
+    assert.strictEqual(await resolve('/c/x', uncRaiz, uncRaiz, 'gitbash'), null, '/c/x do Git Bash não vira UNC da distro do projeto');
+    assert.strictEqual(await resolve('/home/u/proj/a.txt', uncRaiz, uncRaiz, 'powershell'), null, 'terminal Windows: sem distro');
+    assert.deepStrictEqual(await resolve('/home/u/proj/a.txt', uncRaiz, uncRaiz), { path: alvo, isDir: false }, 'sem shell: o ambiente do projeto, como sempre');
+    assert.strictEqual(await resolve('/home/u/proj/a.txt', uncRaiz, uncRaiz, 'wsl:Forjada'), null, 'distro forjada: sem distro');
+    assert.strictEqual(listagens, 1, 'o caminho quente só usa o cache da lista de distros: nunca `wsl -l -v` por link');
+  } finally { fs.promises.stat = stat; fs.promises.realpath = realpath; }
 });

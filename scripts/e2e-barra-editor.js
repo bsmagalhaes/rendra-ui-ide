@@ -1035,12 +1035,14 @@ CENARIOS['terminal-manual'] = async () => {
     await abrirTerminal(app);
     afirma(await app.ev(`document.querySelectorAll('.ws.active .term-pane').length`) === 1, 'o botão do estado do cabeçalho abre exatamente um terminal');
     afirma(await app.ev(`document.querySelector('.ws.active .dev-term-empty').hidden`), 'com terminal aberto, o estado vazio some');
-    // o menu: com WSL aparecem Windows e as distros; sem WSL o terminal abriu direto, sem menu
+    // o menu só existe para o Bash: com o seletor em Git Bash e WSL aparecem Git Bash (Windows) e as distros; sem WSL (ou sem
+    // as duas opções) o terminal abre direto, sem menu
+    await app.ev(`(() => { const s = document.querySelector('.ws.active .dev-shell-select'); const k = ['gitbash', 'bash-wsl'].find(x => [...s.options].some(o => o.value === x)); if (k) { s.value = k; s.dispatchEvent(new Event('change', { bubbles: true })); } return !!k; })()`);
     await app.clica('.ws.active [data-act="new-term"]');
     await sleep(700);
     const menu = await app.ev(`[...document.querySelectorAll('.dev-term-menu button')].map(b => b.textContent)`);
     if (menu.length) {
-      afirma(/^Windows \(.+\)$/.test(menu[0]) && menu.slice(1).every(t => /^WSL \(.+\)$/.test(t)), `menu de escolha: ${JSON.stringify(menu)}`);
+      afirma(menu.every(t => /^(Git Bash \(Windows\)|Bash \(WSL .+\))$/.test(t)) && menu.some(t => /^Bash \(WSL /.test(t)), `menu de escolha: ${JSON.stringify(menu)}`);
       await app.foto('terminal-menu');
       await app.tecla('Escape');
       await sleep(200);

@@ -357,6 +357,11 @@
     shellsReady.then(list => {
       shellSel.innerHTML = list.map(s => `<option value="${s.key}">${esc(s.label)}</option>`).join('');
       shellSel.value = list.some(s => s.key === lsGet('dev.shell', '')) ? lsGet('dev.shell', '') : list[0]?.key;
+      shellsFinal.then(final => {
+        const atual = shellSel.value;
+        shellSel.innerHTML = final.map(s => `<option value="${s.key}">${esc(s.label)}</option>`).join('');
+        shellSel.value = final.some(s => s.key === atual) ? atual : (final.some(s => s.key === lsGet('dev.shell', '')) ? lsGet('dev.shell', '') : final[0]?.key);
+      });
     });
     shellSel.addEventListener('change', () => {
       lsSet('dev.shell', shellSel.value);
@@ -602,19 +607,9 @@
     return mount;
   }
 
-  const sq = s => s.replace(/'/g, "''");
-  // How each shell changes directory to a workspace folder (Windows path or WSL UNC share)
-  function cdCommand(t, root) {
-    const p = root.root;
-    switch (t.shellKey) {
-      case 'gitbash': return `cd "$(cygpath -u '${p.replace(/'/g, "'\\''")}')"\r`;
-      case 'cmd': return `cd /d "${p}"\r`;
-      case 'wsl': return root.wsl ? `cd '${root.wsl.linuxPath.replace(/'/g, "'\\''")}'\r` : `cd "$(wslpath '${p.replace(/'/g, "'\\''")}')"\r`;
-      case 'powershell': return `Set-Location -LiteralPath '${sq(p)}'\r`;
-      // macOS / Linux shells (zsh, bash, fish…)
-      default: return `cd '${p.replace(/'/g, "'\\''")}'\r`;
-    }
-  }
+  // Como o terminal vivo entra na pasta do projeto: o ambiente é o do PRÓPRIO terminal (shell e distro), o projeto só traduz
+  // o caminho (RendraTermEscolha.comandoEntrarNaPasta)
+  const cdCommand = (t, root) => RendraTermEscolha.comandoEntrarNaPasta({ shellKey: t.shellKey, distro: t.distro, root });
 
   async function pickFolder(ws) {
     const target = await chooseFolderTarget();
@@ -1537,7 +1532,10 @@
   }
 
   // ── Terminals (middle panel, 1–4 column grid) ──────────────────────────────
+  // shellsReady: os shells do main (o seletor da barra aparece logo com eles). shellsFinal: a mesma lista mais, no Windows sem
+  // Git Bash e com distro, a entrada Bash (abre no WSL), que chega depois e só acrescenta uma opção ao seletor.
   const shellsReady = dev.ptyShells().catch(() => [{ key: 'powershell', label: 'PowerShell' }]);
+  const shellsFinal = shellsReady.then(async list => RendraTermEscolha.shellsDoSeletor(list, await dev.wslInfo().catch(() => null), window.rendra.platform));
 
   // Git Bash (mintty) default palette; only the dark blues are lifted a little so they stay
   // readable on the dark background. Background is a soft black, just darker than the bars.
@@ -1563,16 +1561,17 @@
     requestAnimationFrame(() => ws.terms.forEach(fitTerm));
   }
 
-  // Botão "novo terminal": com Windows e WSL instalados, pergunta qual; com uma opção só, abre direto
+  // Botão "novo terminal": o shell do seletor da barra escolhe o terminal. PowerShell e CMD abrem direto no Windows (também em
+  // projeto do WSL); o Bash pergunta entre Git Bash e cada distro, com a distro do projeto focada. Fora do Windows abre direto.
   async function pedirNovoTerminal(ws, ancora) {
-    if (ws.root?.wsl) { newTerminal(ws); return; } // projeto no WSL: o terminal já é o da distro
     let info = null;
     try { info = await dev.wslInfo(); } catch { info = null; }
-    const lista = await shellsReady;
+    const lista = await shellsFinal;
     const sel = ws.el.querySelector('.dev-shell-select');
-    const padrao = lista.find(s => s.key === sel.value) || lista[0];
-    const opcoes = RendraTermEscolha.opcoesDeTerminal(padrao, info);
-    if (opcoes.length === 1) { newTerminal(ws); return; }
+    const { direto, opcoes, foco } = RendraTermEscolha.opcoesDeTerminal({
+      shell: sel.value, wslInfo: info, shells: lista, distroProjeto: ws.root?.wsl?.distro || null, plataforma: window.rendra.platform,
+    });
+    if (direto !== null && direto !== undefined) { newTerminal(ws, direto); return; }
     document.querySelector('.dev-term-menu')?.remove();
     const menu = document.createElement('div');
     menu.className = 'dev-term-menu';
@@ -1594,7 +1593,7 @@
       fechar();
       newTerminal(ws, o.shell);
     });
-    menu.querySelector('button').focus();
+    menu.querySelectorAll('button')[foco]?.focus();
   }
 
   // ── Seletor de conversas dentro do terminal novo ───────────────────────────
@@ -1894,7 +1893,7 @@
       const hit = cacheCaminhos.get(chave);
       if (hit && Date.now() - hit.em < 30000) return hit.promessa;
       if (cacheCaminhos.size > 500) cacheCaminhos.clear();
-      const promessa = dev.resolvePath(texto, t.cwd, ws.root?.root).catch(() => null);
+      const promessa = dev.resolvePath(texto, t.cwd, ws.root?.root, t.shellAberto).catch(() => null);
       cacheCaminhos.set(chave, { em: Date.now(), promessa });
       return promessa;
     };
@@ -1970,6 +1969,10 @@
     t.cwd = res.cwd;
     t.alive = true;
     t.shellKey = res.shellKey;
+    t.distro = res.distro || null;
+    // o shell que o terminal ABRIU (wsl:<distro> para qualquer WSL), nunca o do pedido nem o do projeto: seletor de conversas,
+    // "em uso", encerramento do dono e links seguem o ambiente do terminal
+    t.shellAberto = res.shellKey === 'wsl' && res.distro ? `wsl:${res.distro}` : res.shellKey;
     t.name = `${res.shell} ${++ws.termCount}`;
     tab.querySelector('.term-pane-name').textContent = t.name;
     tab.setAttribute('aria-label', t.name);
@@ -2096,7 +2099,7 @@
     });
     new ResizeObserver(() => fitTerm(t)).observe(body);
     term.focus();
-    abrirSeletor(ws, t, shell); // depois do pty:create: a distro já foi acordada
+    abrirSeletor(ws, t, t.shellAberto); // depois do pty:create: a distro já foi acordada
   }
 
   // Inline rename: the name becomes an input with its text selected, ready to type over

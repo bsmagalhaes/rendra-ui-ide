@@ -7,13 +7,14 @@ const os = require('os');
 const path = require('path');
 const { registerDevCode } = require('../src/devcode');
 
-function montar(inicial) {
+function montar(inicial, dialog = {}) {
   const handlers = new Map();
   const dados = new Map(inicial ? [['devcode.workspaces', inicial]] : []);
   const ipcMain = { handle: (nome, fn) => handlers.set(nome, fn), on() {}, once() {}, removeHandler() {} };
   const store = { get: k => dados.get(k), set: (k, v) => dados.set(k, v), delete: k => dados.delete(k) };
-  registerDevCode({ ipcMain, dialog: {}, store, getWindow: () => null });
+  registerDevCode({ ipcMain, dialog, store, getWindow: () => null });
   return {
+    abrirPasta: opts => handlers.get('dev:open-folder')({}, opts),
     gravar: data => handlers.get('dev:save-workspaces')({}, data),
     carregar: () => handlers.get('dev:load-workspaces')({}),
     gravado: () => dados.get('devcode.workspaces'),
@@ -97,4 +98,34 @@ test('a ordem dos projetos e das abas do editor vai e volta como foi gravada, se
   assert.strictEqual(r.active, 1);
   assert.deepStrictEqual(Object.keys(r.list[0]).sort(), ['cols', 'custom', 'editorHidden', 'groups', 'name', 'root'], 'nenhum campo de ordem ou de id foi acrescentado (o wsl nulo não volta, como antes)');
   assert.deepStrictEqual(Object.keys(t.gravado().list[0]).sort(), ['cols', 'custom', 'editorHidden', 'groups', 'name', 'root', 'wsl']);
+});
+
+// ── ambiente do projeto: a marca WSL não gruda na pasta (D2) e cada aba guarda o seu ambiente (D6) ──
+const wslMontada = { distro: 'Ubuntu', linuxPath: '/mnt/personalizado/proj' };
+
+test('a mesma pasta em duas abas, uma no WSL e outra no Windows: cada uma volta com o seu ambiente, na mesma ordem', async () => {
+  const a = pasta(), b = pasta();
+  const t = montar();
+  t.gravar({ list: [
+    { name: 'Windows', root: a, wsl: null, groups: [] },
+    { name: 'WSL', root: a, wsl: wslMontada, groups: [] },
+    { name: 'Outra', root: b, wsl: null, groups: [] },
+    { name: 'WSL de novo', root: a, wsl: { distro: 'Ubuntu', linuxPath: '/mnt/personalizado/proj' }, groups: [] },
+  ], active: 1 });
+  assert.deepStrictEqual(t.gravado().list.map(w => w.wsl), [null, wslMontada, null, wslMontada], 'o formato salvo é { distro, linuxPath } ou nulo');
+  const r = await t.carregar();
+  assert.deepStrictEqual(r.list.map(w => w.name), ['Windows', 'WSL', 'Outra', 'WSL de novo']);
+  assert.deepStrictEqual(r.list.map(w => w.root.wsl), [null, { ...wslMontada, viaWindows: true }, null, { ...wslMontada, viaWindows: true }],
+    'a aba do Windows não herda a montagem das abas do WSL que têm a mesma pasta');
+  assert.strictEqual(r.active, 1);
+});
+
+test('abrir a pasta como "Windows" depois de tê-la aberto no WSL abre no Windows (sem marca WSL)', async () => {
+  const a = pasta();
+  const t = montar({ list: [{ name: 'p', root: a, wsl: wslMontada, groups: [] }], active: 0 }, { showOpenDialog: async () => ({ canceled: false, filePaths: [a] }) });
+  const r = await t.carregar();
+  assert.deepStrictEqual(r.list[0].root.wsl, { ...wslMontada, viaWindows: true }, 'a aba salva no WSL continua WSL');
+  const aberta = await t.abrirPasta({});
+  assert.strictEqual(aberta.root, path.resolve(a));
+  assert.strictEqual(aberta.wsl, null, 'escolher Windows ao abrir: o retorno não tem wsl, mesmo com a pasta já montada no WSL');
 });
