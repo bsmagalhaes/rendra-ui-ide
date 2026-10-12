@@ -96,6 +96,9 @@
   .feature p { margin: 0; color: var(--text-2); font-size: 15px; }
   .feature .ico { font: 700 14px var(--mono); color: var(--orange-text); margin-bottom: 12px; }
 
+  .features.dois { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .feature code { font: 13px var(--mono); color: var(--text); overflow-wrap: anywhere; }
+
   .gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
   .gallery figure { margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
   .gallery button { all: unset; display: block; cursor: zoom-in; width: 100%; }
@@ -144,7 +147,7 @@
   @media (max-width: 600px) {
     .wrap { padding: 0 16px; }
     section { padding: 56px 0; }
-    .features, .gallery { grid-template-columns: minmax(0, 1fr); }
+    .features, .features.dois, .gallery { grid-template-columns: minmax(0, 1fr); }
     .lightbox { padding: 56px 8px; }
   }
 </style>
@@ -181,6 +184,18 @@
       <div class="feature"><div class="ico">5h</div><h3>Limites do plano</h3><p>Limite de 5 horas e semanal do Claude Code sempre à vista, lidos da statusline, sem usar a sua senha. Limites do Codex também.</p></div>
       <div class="feature"><div class="ico">RTK</div><h3>Menos tokens</h3><p>Integração com o RTK, que filtra a saída dos comandos antes de ela chegar ao agente, no Claude Code e no Codex.</p></div>
       <div class="feature"><div class="ico">↻</div><h3>Sempre atualizado</h3><p>Quando sai uma versão nova, um clique atualiza o app sem mexer em configurações, workspaces e preços. Preços novos chegam sozinhos.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="ambientes">
+  <div class="wrap">
+    <div class="eyebrow">Windows e WSL</div>
+    <h2>Um projeto, dois ambientes, cada um com a sua conta</h2>
+    <p class="lead">Abra a mesma pasta no Windows e no WSL ao mesmo tempo. O terminal de cada ambiente abre na pasta do projeto, e cada ambiente guarda as próprias conversas e a própria conta.</p>
+    <div class="features dois">
+      <div class="feature"><div class="ico">Windows + WSL</div><h3>Cada terminal na pasta certa</h3><p>A pasta do Windows vira <code>/mnt/c/...</code> no WSL, e a pasta <code>\\wsl.localhost\...</code> vira esse mesmo caminho no Windows. Você escolhe o shell na barra e a Rendra IDE abre o terminal já na pasta do projeto, sem cd. PowerShell e CMD abrem no Windows, e o Bash pergunta entre o Git Bash e cada distro do WSL. A mesma pasta pode ficar em duas abas, uma no Windows e outra no WSL.</p></div>
+      <div class="feature"><div class="ico">Claude &middot; Codex</div><h3>Uma conta de LLM por ambiente</h3><p>Use o Claude Code ou o Codex com uma conta no Windows e com outra no WSL, no mesmo projeto. O seletor da barra mostra o Claude e o Codex de cada ambiente, e o seletor de conversas lista só as conversas do ambiente do terminal em que você está.</p></div>
     </div>
   </div>
 </section>
