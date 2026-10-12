@@ -1,6 +1,6 @@
 # Novidades
 
-## Próxima versão
+## 1.9.0 · 12/10/2026
 ### Windows e WSL no mesmo projeto
 - O terminal agora segue o shell que você escolhe, e o projeto só diz em que pasta ele abre. No mesmo projeto convivem terminais do Windows e do WSL, cada um na pasta do projeto vista no ambiente dele: a pasta do Windows vira `/mnt/c/...` no WSL, e a pasta `\\wsl.localhost\...` do WSL vira o mesmo caminho no Windows. Você não precisa dar `cd`.
 - O seletor de shell da barra manda de verdade. PowerShell e CMD abrem direto no Windows, sem menu, também em projeto do WSL (antes, em projeto do WSL todo terminal abria no WSL). Se o seu hábito era abrir o terminal do WSL com o seletor em PowerShell, escolha Git Bash ou Bash no seletor.

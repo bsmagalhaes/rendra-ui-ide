@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.9.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Escolha do terminal ao abrir um novo: o shell do seletor da barra decide o ambiente. PowerShell e CMD só existem
 // no Windows e abrem direto; o Bash existe nos dois ambientes (Git Bash no Windows, Bash em cada distro do WSL) e é
 // o único que pergunta. O projeto só traduz a pasta e diz qual opção vem focada. Carregado no renderer

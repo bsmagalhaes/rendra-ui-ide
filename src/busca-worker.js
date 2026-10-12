@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.9.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Busca do explorador numa thread à parte: expressão regular do usuário pode ser catastrófica e o fs síncrono num share
 // parado trava; o processo principal faz `terminate()` ao estourar o tempo e responde com o que já recebeu.
 // Entrada (workerData): { raiz, raizReal, lista | null, modo: 'texto' | 'nome', opcoes, limites, git }.

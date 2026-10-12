@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.9.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Núcleo puro da busca do explorador (CommonJS, sem fs): casamento por linha, limites e regras de pasta.
 // Usado pelo worker (src/busca-worker.js) e pelo handler `dev:search` (src/devcode.js).
 

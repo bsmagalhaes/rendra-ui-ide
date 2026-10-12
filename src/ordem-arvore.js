@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.8.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.9.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Ordem das entradas do explorador (decisão do dono): pastas que começam com ".", depois as demais pastas, depois
 // arquivos que começam com "." e por último os demais arquivos; dentro de cada grupo, por nome. Módulo puro (CommonJS).
 
