@@ -18,11 +18,12 @@ const dentro = real => { const a = norm(real); return a === baseReal || a.starts
 
 // realpath da PASTA do arquivo, uma vez por pasta (share UNC lento): o arquivo só vale se a pasta real está dentro da raiz
 // real. O lstat da folha não basta: um arquivo rastreado sob uma pasta trocada por link depois seria lido de fora.
+// O realpath é o nativo, o mesmo que o main usa na raiz: o do JS não expande nomes 8.3 e a pasta pareceria fora da raiz.
 const cachePasta = new Map();
 function pastaDentro(dir) {
   if (cachePasta.has(dir)) return cachePasta.get(dir);
   let ok = false;
-  try { ok = dentro(fs.realpathSync(dir)); } catch { ok = false; }
+  try { ok = dentro(fs.realpathSync.native(dir)); } catch { ok = false; }
   cachePasta.set(dir, ok);
   return ok;
 }

@@ -1,5 +1,9 @@
 # Novidades
 
+## Próxima versão
+### Correções
+- A busca no código voltava vazia quando a pasta do projeto era aberta por um caminho com nome curto do Windows (8.3, como `C:\Users\RUNNER~1`). A conferência da pasta usava dois realpath diferentes e achava que tudo estava fora do projeto; agora os dois lados usam o mesmo, sem afrouxar o confinamento por link e junção.
+
 ## 1.9.0 · 12/10/2026
 ### Windows e WSL no mesmo projeto
 - O terminal agora segue o shell que você escolhe, e o projeto só diz em que pasta ele abre. No mesmo projeto convivem terminais do Windows e do WSL, cada um na pasta do projeto vista no ambiente dele: a pasta do Windows vira `/mnt/c/...` no WSL, e a pasta `\\wsl.localhost\...` do WSL vira o mesmo caminho no Windows. Você não precisa dar `cd`.

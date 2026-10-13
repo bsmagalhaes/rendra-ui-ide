@@ -213,6 +213,29 @@ test('raiz aberta por junção (raiz diferente do realpath): a busca acha os arq
   assert.deepStrictEqual(rels(raiz, r), ['sub/x.txt']);
 });
 
+// forma 8.3 de um diretório (só Windows): realpath nativo expande, o do JS não. Se o volume não gera nomes curtos sozinho,
+// tenta atribuir um com fsutil (exige privilégio); sem nenhum dos dois o teste se pula.
+function nomeCurto(dir) {
+  const consulta = () => {
+    try {
+      const out = execFileSync('cmd.exe', [`/d /s /c "for %I in ("${dir}") do @echo %~sI"`], { encoding: 'utf8', windowsVerbatimArguments: true }).trim();
+      return out && out.toLowerCase() !== dir.toLowerCase() ? out : null;
+    } catch { return null; }
+  };
+  const antes = consulta();
+  if (antes) return antes;
+  try { execFileSync('fsutil.exe', ['file', 'setshortname', dir, 'RNDRA~1'], { stdio: 'ignore' }); } catch { return null; }
+  return consulta();
+}
+const base83 = process.platform === 'win32' ? (() => { const d = pasta(); fs.mkdirSync(path.join(d, 'projeto-com-nome-longo')); const c = nomeCurto(path.join(d, 'projeto-com-nome-longo')); return c ? { d, c } : null; })() : null;
+test('raiz aberta por caminho 8.3 (nome curto): a busca acha os arquivos', { skip: process.platform !== 'win32' ? 'só no Windows' : !base83 && 'o volume não gera nomes curtos 8.3' }, async () => {
+  const raiz = base83.c;
+  escreve(path.join(base83.d, 'projeto-com-nome-longo', 'sub', 'x.txt'), 'alvo pelo nome curto');
+  const { call } = montar([raiz]);
+  const r = await texto(call, raiz, 'alvo');
+  assert.deepStrictEqual(rels(raiz, r), ['sub/x.txt']);
+});
+
 test('repositório cuja listagem falha dá erro visível, nunca uma busca que ignora o .gitignore', { skip: !temGit && 'git não instalado' }, async () => {
   const raiz = pasta();
   git(raiz, 'init', '-q');
