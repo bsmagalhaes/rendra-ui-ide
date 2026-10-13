@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.9.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.9.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 const fs = require('fs');
 const path = require('path');
 const { calcClaudeRecordCost, calcCacheSavings } = require('./pricer');

@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.9.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.9.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Legenda do explorador (UMD, sem DOM, testável no node): o tipo do arquivo pelo nome (`fileKind`, a única fonte, também
 // usada pela árvore), o emblema da linha (● de pasta ou de não salvo, ou a letra do git) e a lista de linhas da legenda.
 // A legenda NÃO repete cor nenhuma: cada amostra é uma linha `.dev-node` real, com as mesmas classes da árvore, e a cor

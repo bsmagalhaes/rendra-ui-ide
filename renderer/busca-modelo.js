@@ -1,4 +1,4 @@
-/*! Rendra IDE v1.9.0 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
+/*! Rendra IDE v1.9.1 | MIT | © 2026 Bruno Magalhaes | brunomagalhaes.me */
 // Modelo puro do painel de busca do explorador (UMD, sem DOM, testável no node): estado, validação do termo, frases do
 // resumo (com o aviso de resultado parcial), trechos com marcas, lista plana do painel e a navegação por seta.
 // Carregado no renderer (window.RendraBuscaModelo) e nos testes (require).

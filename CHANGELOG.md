@@ -1,6 +1,6 @@
 # Novidades
 
-## Próxima versão
+## 1.9.1 · 13/10/2026
 ### Correções
 - A busca no código voltava vazia quando a pasta do projeto era aberta por um caminho com nome curto do Windows (8.3, como `C:\Users\RUNNER~1`). A conferência da pasta usava dois realpath diferentes e achava que tudo estava fora do projeto; agora os dois lados usam o mesmo, sem afrouxar o confinamento por link e junção.
 
