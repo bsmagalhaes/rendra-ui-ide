@@ -8,7 +8,8 @@ const path = require('path');
 const { snapshotProvedores } = require('../src/provider-snapshot');
 const { contaClaudeDoHome } = require('../src/accounts');
 const { lerContaCodex } = require('../src/codex-account');
-const { limitesLeves, _limpaCache } = require('../src/codex-limits');
+const codexLimits = require('../src/codex-limits');
+const { _limpaCache } = codexLimits;
 const { wslRoots, _limpaCache: limpaWsl } = require('../src/wsl-roots');
 
 const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -16,10 +17,14 @@ const escreve = (f, o) => { fs.mkdirSync(path.dirname(f), { recursive: true }); 
 const authCodex = (dir, org) => escreve(path.join(dir, 'auth.json'), {
   tokens: { id_token: `x.${b64({ email: 'cx@exemplo.test', name: 'Cx Demo', 'https://api.openai.com/auth': { chatgpt_plan_type: 'pro', organizations: [{ title: org, is_default: true }] } })}.y`, access_token: 'SENTINELA-ACESSO', refresh_token: 'SENTINELA-RENOVA' },
 });
-const resetSeg = Math.floor((Date.now() + 86400000) / 1000);
+// Relógio fixo: o rollout é fabricado na pasta 2026/10/03 e limitesLeves poda por data (8 dias),
+// então nada aqui pode depender de Date.now().
+const AGORA = Date.UTC(2026, 9, 3, 12);
+const limitesLeves = (dir, deps) => codexLimits.limitesLeves(dir, { agora: AGORA, ...deps });
+const resetSeg = Math.floor((AGORA + 86400000) / 1000);
 const rolloutCodex = (sessionsDir, pct) => {
   const f = path.join(sessionsDir, '2026', '10', '03', 'rollout-x.jsonl');
-  escreve(f, JSON.stringify({ timestamp: new Date().toISOString(), type: 'event_msg', payload: { type: 'token_count', rate_limits: { primary: { used_percent: pct, window_minutes: 10080, resets_at: resetSeg }, secondary: null } } }) + '\n');
+  escreve(f, JSON.stringify({ timestamp: new Date(AGORA).toISOString(), type: 'event_msg', payload: { type: 'token_count', rate_limits: { primary: { used_percent: pct, window_minutes: 10080, resets_at: resetSeg }, secondary: null } } }) + '\n');
 };
 const depsBase = (extra = {}) => ({
   homeIde: '/nao-usado', codexHome: () => '/nao-usado', statuslineLimits: () => ({ limits: null }),
