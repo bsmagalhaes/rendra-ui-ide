@@ -6,10 +6,14 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { limitesLeves, normalizaLimitesCodex, _limpaCache } = require('../src/codex-limits');
+const codexLimits = require('../src/codex-limits');
+const { normalizaLimitesCodex, _limpaCache } = codexLimits;
 
 const DIA = 86400000;
-const AGORA = Date.now();
+// Relógio fixo: as pastas AAAA/MM/DD dos rollouts são fabricadas em 2026/10/03 e `limitesLeves` poda por data,
+// então o teste não pode depender de Date.now() (virava vermelho quando o dia real passava de 8 dias).
+const AGORA = Date.UTC(2026, 9, 3, 12);
+const limitesLeves = (dir, deps) => codexLimits.limitesLeves(dir, { agora: AGORA, ...deps });
 const iso = ms => new Date(ms).toISOString();
 
 function sessions() {
@@ -130,7 +134,7 @@ test('pastas AAAA/MM/DD fora do corte nem são listadas nem têm stat (poda ante
   fs.promises.readdir = async (p, ...r) => { lists.push(String(p)); return readdir(p, ...r); };
   let r;
   try {
-    r = await limitesLeves(dir, { agora: Date.UTC(2026, 9, 3, 12) });
+    r = await limitesLeves(dir, { agora: AGORA });
   } finally { fs.promises.stat = stat; fs.promises.readdir = readdir; }
   assert.strictEqual(r.limits[0].percent, 12);
   assert.ok(stats.includes(recente), 'a pasta do dia dentro do corte é lida');
